@@ -181,9 +181,20 @@ const REQUEST = ${JSON.stringify(data.request)};
 const $ = id => document.getElementById(id);
 function ok(m){ $('status').innerHTML = '<div class="ok">'+m+'</div>'; }
 function err(m){ $('status').innerHTML = '<div class="err">'+m+'</div>'; }
+function flask(){
+  $('status').innerHTML = '<div class="err" style="text-align:left">Your MetaMask doesn\\'t support '
+   + 'advanced permissions (ERC-7715) yet.<br><br>'
+   + '→ Install <a href="https://metamask.io/flask/" target="_blank"><b>MetaMask Flask</b></a> and try again, or<br>'
+   + '→ close this and run <b>compass init</b> to use a generated wallet (works in any MetaMask).</div>';
+}
+function unsupported(e){
+  const m = ((e && e.message) || '').toLowerCase();
+  return (e && (e.code === 4200 || e.code === -32601)) ||
+    m.includes('does not exist') || m.includes('not available') || m.includes('not supported') || m.includes('unsupported');
+}
 $('go').onclick = async () => {
   const eth = window.ethereum;
-  if(!eth){ err('MetaMask not found. Install MetaMask (Flask for advanced permissions).'); return; }
+  if(!eth){ err('MetaMask not found — install it (and MetaMask Flask for advanced permissions).'); return; }
   $('go').disabled = true;
   try{
     const [account] = await eth.request({ method: 'eth_requestAccounts' });
@@ -191,18 +202,20 @@ $('go').onclick = async () => {
     try{
       result = await eth.request({ method: 'wallet_requestExecutionPermissions', params: REQUEST });
     }catch(e){
-      // Some builds use the EIP method name.
-      result = await eth.request({ method: 'wallet_grantPermissions', params: REQUEST });
+      if(unsupported(e)){ $('go').disabled = false; flask(); return; }
+      throw e;
     }
     const granted = Array.isArray(result) ? result[0] : result;
-    const ctx = granted.context || granted.permissionsContext || granted.permission?.context;
+    const ctx = granted.context || granted.permissionsContext || (granted.permission && granted.permission.context);
     if(!ctx) throw new Error('No permission context returned');
     await fetch('/grant', { method:'POST', headers:{'content-type':'application/json'},
       body: JSON.stringify({ permissionsContext: ctx, accountMeta: granted.accountMeta, signerMeta: granted.signerMeta, account }) });
-    ok('✓ Budget granted. You can close this tab and return to the terminal.');
+    ok('✓ Budget granted. Close this tab and return to the terminal.');
   }catch(e){
     $('go').disabled = false;
-    err((e && e.message) ? e.message : 'Request was rejected. Advanced permissions need MetaMask Flask.');
+    if(e && e.code === 4001) err('You rejected the request.');
+    else if(unsupported(e)) flask();
+    else err((e && e.message) ? e.message : 'Request failed.');
   }
 };
 </script></body></html>`

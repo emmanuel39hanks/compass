@@ -41,7 +41,7 @@ import { runDemoSpine } from '../src/demo'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.6'
+const VERSION = '0.1.7'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -122,10 +122,11 @@ async function runInitWizard() {
   // ── Wallet ──
   const envPk = process.env.COMPASS_PRIVATE_KEY
   const walletChoice = await clack.select({
-    message: 'Wallet for your agent',
+    message: 'How should your agent get funds?',
     options: [
+      { value: 'connect', label: 'Connect MetaMask & grant a budget', hint: 'ERC-7715 · needs Flask' },
+      { value: 'generate', label: 'Generate a new burner wallet', hint: 'testnet — simplest' },
       ...(envPk && addrOf(envPk) ? [{ value: 'keep', label: `Use the key already set (${addrOf(envPk).slice(0, 12)}…)` }] : []),
-      { value: 'generate', label: 'Generate a new burner wallet', hint: 'testnet only' },
       { value: 'paste', label: 'Paste an existing private key' },
     ],
     initialValue: envPk && addrOf(envPk) ? 'keep' : 'generate',
@@ -133,7 +134,11 @@ async function runInitWizard() {
   if (clack.isCancel(walletChoice)) return clack.cancel('Aborted.')
 
   let pk = envPk
-  if (walletChoice === 'generate') {
+  let wantConnect = false
+  if (walletChoice === 'connect') {
+    pk = generatePrivateKey() // a session key for the agent's identity; funds come from MetaMask
+    wantConnect = true
+  } else if (walletChoice === 'generate') {
     pk = generatePrivateKey()
     clack.note(`${addrOf(pk)}\n\nSaved to .env — a testnet burner. Never fund it with real value.`, 'New wallet')
   } else if (walletChoice === 'paste') {
@@ -185,6 +190,12 @@ async function runInitWizard() {
     'Your agent',
   )
 
+  if (wantConnect) {
+    clack.outro('compass is set up — now grant your budget from MetaMask…')
+    await launchConnect(config)
+    return
+  }
+
   const steps = []
   if (account) {
     steps.push(
@@ -207,13 +218,8 @@ function runStatus() {
   console.log(renderStatus(config))
 }
 
-/** `compass connect` — grant the agent a budget from real MetaMask (ERC-7715). */
-async function runConnectCmd() {
-  if (!existsSync(CONFIG_PATH)) {
-    console.log('run `compass init` first.')
-    return
-  }
-  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+/** Open the browser MetaMask flow + capture the grant. Shared by `connect` + `init`. */
+async function launchConnect(config) {
   if (!config.budget) {
     console.log('set a budget first:  compass budget --recurring "25 USDC/week"')
     return
@@ -221,8 +227,8 @@ async function runConnectCmd() {
   const chainId = config.network.chainId
   const endpoint = config.relayer?.endpoint ?? 'https://relayer.1shotapi.dev/relayers'
   const budget = `${config.budget.amount} ${config.budget.token}/${config.budget.period}`
-  console.log('Opening your browser to connect MetaMask…')
-  console.log('(ERC-7715 advanced permissions require MetaMask Flask.)\n')
+  console.log('\nOpening your browser to connect MetaMask…')
+  console.log('(Advanced permissions need MetaMask Flask — get it at metamask.io/flask)\n')
   try {
     // The budget is granted to the 1Shot redeemer so the agent can spend it gaslessly.
     const grantee = await relayerTarget(chainId, endpoint)
@@ -233,13 +239,22 @@ async function runConnectCmd() {
       ...(config.network.rpcUrl ? { rpcUrl: config.network.rpcUrl } : {}),
       outPath: '.compass/permission.json',
     })
-    console.log(`\n✓ MetaMask granted ${granted.budget.amount} ${granted.budget.token}/${granted.budget.period}`)
-    console.log(`  from  ${granted.account}`)
+    console.log(`\n✓ MetaMask granted ${granted.budget.amount} ${granted.budget.token}/${granted.budget.period} from ${granted.account}`)
     console.log('  saved .compass/permission.json — your agent can now spend within it.')
     console.log('\nTry:  compass  →  "send 0.1 USDC to 0x…"')
   } catch (err) {
-    console.error(`connect failed: ${err.message}`)
+    console.error(`\nconnect didn't complete: ${err.message}`)
+    console.log("That's fine — your agent is set up. Fund the wallet, or install MetaMask Flask and re-run `compass connect`.")
   }
+}
+
+/** `compass connect` — grant the agent a budget from real MetaMask (ERC-7715). */
+async function runConnectCmd() {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log('run `compass init` first.')
+    return
+  }
+  await launchConnect(parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8'))))
 }
 
 async function runDemo() {
