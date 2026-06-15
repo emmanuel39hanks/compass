@@ -1,0 +1,27 @@
+{
+  "name": "@compass_agents/delegation",
+  "version": "0.1.3",
+  "type": "module",
+  "description": "MetaMask Smart Accounts Kit wrapper: smart accounts, ERC-7710 delegation/redelegation, caveat builders, redeemDelegations.",
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@metamask/smart-accounts-kit": "^1.6.0",
+    "viem": "^2.31.4",
+    "zod": "^3.23.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["src"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/compass-agents/compass.git",
+    "directory": "packages/delegation"
+  },
+  "homepage": "https://github.com/compass-agents/compass#readme"
+}

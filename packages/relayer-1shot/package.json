@@ -1,0 +1,28 @@
+{
+  "name": "@compass_agents/relayer-1shot",
+  "version": "0.1.3",
+  "type": "module",
+  "description": "1Shot permissionless relayer adapter: EIP-7702 account upgrade, ERC-7710 mainnet relay with stablecoin gas, status polling, Ed25519 webhook verification.",
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@compass_agents/delegation": "0.1.3",
+    "@noble/ed25519": "^2.1.0",
+    "safe-stable-stringify": "^2.5.0",
+    "viem": "^2.31.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["src"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/compass-agents/compass.git",
+    "directory": "packages/relayer-1shot"
+  },
+  "homepage": "https://github.com/compass-agents/compass#readme"
+}
