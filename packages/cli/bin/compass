@@ -26,7 +26,7 @@ import {
 import { Gateway, PairingStore } from '@compass_agents/gateway'
 import { publicKeyFor } from '@compass_agents/plugin-a2a'
 import { TelegramClient, TelegramListener } from '@compass_agents/plugin-telegram'
-import { readErc20Balance } from '@compass_agents/relayer-1shot'
+import { readErc20Balance, relayerTarget } from '@compass_agents/relayer-1shot'
 import * as clack from '@clack/prompts'
 import { createPublicClient, createWalletClient, formatEther, formatUnits, http } from 'viem'
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
@@ -41,7 +41,7 @@ import { runDemoSpine } from '../src/demo'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.5'
+const VERSION = '0.1.6'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -214,31 +214,29 @@ async function runConnectCmd() {
     return
   }
   const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
-  const pk = process.env.COMPASS_PRIVATE_KEY
-  const agentAddress = pk && addrOf(pk)
-  if (!agentAddress) {
-    console.log('set COMPASS_PRIVATE_KEY first — that is the agent account MetaMask grants to.')
-    return
-  }
   if (!config.budget) {
     console.log('set a budget first:  compass budget --recurring "25 USDC/week"')
     return
   }
+  const chainId = config.network.chainId
+  const endpoint = config.relayer?.endpoint ?? 'https://relayer.1shotapi.dev/relayers'
   const budget = `${config.budget.amount} ${config.budget.token}/${config.budget.period}`
   console.log('Opening your browser to connect MetaMask…')
   console.log('(ERC-7715 advanced permissions require MetaMask Flask.)\n')
   try {
+    // The budget is granted to the 1Shot redeemer so the agent can spend it gaslessly.
+    const grantee = await relayerTarget(chainId, endpoint)
     const granted = await runConnect({
-      agentAddress,
-      chainId: config.network.chainId,
+      grantee,
+      chainId,
       budget,
       ...(config.network.rpcUrl ? { rpcUrl: config.network.rpcUrl } : {}),
       outPath: '.compass/permission.json',
     })
     console.log(`\n✓ MetaMask granted ${granted.budget.amount} ${granted.budget.token}/${granted.budget.period}`)
-    console.log(`  from   ${granted.account}`)
-    console.log(`  to     your agent ${granted.grantee}`)
-    console.log('  saved  .compass/permission.json — the agent can now spend within it.')
+    console.log(`  from  ${granted.account}`)
+    console.log('  saved .compass/permission.json — your agent can now spend within it.')
+    console.log('\nTry:  compass  →  "send 0.1 USDC to 0x…"')
   } catch (err) {
     console.error(`connect failed: ${err.message}`)
   }

@@ -16,8 +16,8 @@ import { type Address, parseUnits, toHex } from 'viem'
  */
 
 export interface ConnectOptions {
-  /** The grantee — the agent's account that MetaMask grants the budget to. */
-  agentAddress: Address
+  /** The grantee/redeemer the budget is granted to (the 1Shot relayer target). */
+  grantee: Address
   chainId: number
   /** e.g. "25 USDC/week". */
   budget: string
@@ -89,7 +89,7 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
   const now = Math.floor(Date.now() / 1000)
   const request = buildPermissionsRequest({
     chainId: opts.chainId,
-    grantee: opts.agentAddress,
+    grantee: opts.grantee,
     token,
     periodAmount,
     periodSeconds,
@@ -97,7 +97,6 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
     expiry: now + 30 * 86_400,
   })
   const page = connectPage({
-    agent: opts.agentAddress,
     chainId: opts.chainId,
     budget: `${spec.amount} ${spec.token}/${spec.period}`,
     request,
@@ -127,7 +126,7 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
           const granted: GrantedPermission = {
             chainId: opts.chainId,
             account: body.account,
-            grantee: opts.agentAddress,
+            grantee: opts.grantee,
             permissionsContext: body.permissionsContext,
             ...(body.accountMeta ? { accountMeta: body.accountMeta } : {}),
             ...(body.signerMeta ? { signerMeta: body.signerMeta } : {}),
@@ -151,12 +150,7 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
 }
 
 /** The self-contained connect page (no build step; talks to window.ethereum). */
-function connectPage(data: {
-  agent: string
-  chainId: number
-  budget: string
-  request: unknown
-}): string {
+function connectPage(data: { chainId: number; budget: string; request: unknown }): string {
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Connect MetaMask · compass</title>
 <style>
@@ -175,7 +169,6 @@ button{width:100%;border:0;border-radius:999px;padding:15px;font-size:16px;font-
 <div class="card">
   <h1>🧭 Connect MetaMask</h1>
   <p class="sub">Grant your compass agent a spending budget — on-chain, revocable.</p>
-  <div class="row"><span>Agent</span><b class="mono" id="agent">${data.agent}</b></div>
   <div class="row"><span>Budget</span><b>${data.budget}</b></div>
   <div class="row"><span>Network</span><b>Base ${data.chainId === 84532 ? 'Sepolia' : ''}</b></div>
   <button id="go" class="primary">Connect MetaMask &amp; grant budget</button>

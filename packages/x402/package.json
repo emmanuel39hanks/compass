@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/x402",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "description": "x402 client (auto 402 -> pay -> retry) and an ERC-7710 facilitator (verify by simulating redeemDelegations, settle via the 1Shot relayer).",
   "license": "MIT",
@@ -10,8 +10,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@compass_agents/delegation": "0.1.5",
-    "@compass_agents/relayer-1shot": "0.1.5",
+    "@compass_agents/delegation": "0.1.6",
+    "@compass_agents/relayer-1shot": "0.1.6",
     "viem": "^2.31.4"
   },
   "publishConfig": {

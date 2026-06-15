@@ -36,8 +36,12 @@ export interface RelayerExecution {
 
 export interface Send7710Input {
   chainId: number
-  /** The delegation chain [leaf, …, root] authorising the action. */
-  permissionContext: Delegation[]
+  /**
+   * The delegation chain [leaf, …, root] authorising the action — either decoded
+   * `Delegation` structs (the local-key path) or an encoded `Hex` permission
+   * context (e.g. from an ERC-7715 grant). The relayer accepts both.
+   */
+  permissionContext: Delegation[] | Hex
   executions: RelayerExecution[]
   authorizationList?: AuthorizationListEntry[]
   /** Price-lock context returned by estimate. */

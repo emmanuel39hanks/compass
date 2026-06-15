@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs'
 import type { CompassConfig, ToolDef } from '@compass_agents/core'
 import {
   USDC_BY_CHAIN,
@@ -11,6 +12,7 @@ import { makeHireTools } from '@compass_agents/plugin-a2a'
 import {
   OneShotRelayer,
   readErc20Balance,
+  relayGrantedTransfer,
   relayHiredUsdcTransfer,
   relayUsdcTransfer,
 } from '@compass_agents/relayer-1shot'
@@ -21,6 +23,19 @@ import { z } from 'zod'
 import { makeOnchainTools } from './onchain'
 
 const DEFAULT_RELAYER = 'https://relayer.1shotapi.dev/relayers'
+const GRANT_PATH = '.compass/permission.json'
+
+/** A MetaMask ERC-7715 grant from `compass connect`, if one exists for this chain. */
+function readGrant(chainId: number): { permissionsContext: Hex } | null {
+  if (!existsSync(GRANT_PATH)) return null
+  try {
+    const g = JSON.parse(readFileSync(GRANT_PATH, 'utf8'))
+    if (g.chainId === chainId && typeof g.permissionsContext === 'string') return g
+  } catch {
+    /* ignore a malformed grant */
+  }
+  return null
+}
 
 /**
  * The agent's on-chain tool surface (balance, send, hire), wired to the live
@@ -44,8 +59,21 @@ export function buildOnchainTools(config: CompassConfig, pk: Hex): ToolDef[] {
     ...makeOnchainTools({
       account,
       readUsdcBalance: () => readErc20Balance({ chainId, rpcUrl, token, account }),
-      sendUsdc: (to, amount) =>
-        relayUsdcTransfer({ privateKey: pk, chainId, rpcUrl, endpoint, to, amount }),
+      sendUsdc: (to, amount) => {
+        // Prefer a MetaMask ERC-7715 grant (from `compass connect`) when present —
+        // the user's wallet funds it; otherwise spend from the local operator key.
+        const grant = readGrant(chainId)
+        return grant
+          ? relayGrantedTransfer({
+              permissionContext: grant.permissionsContext,
+              chainId,
+              rpcUrl,
+              endpoint,
+              to,
+              amount,
+            })
+          : relayUsdcTransfer({ privateKey: pk, chainId, rpcUrl, endpoint, to, amount })
+      },
     }),
     ...makeHireTools({
       hire: async ({ to, amount, helper }) => {

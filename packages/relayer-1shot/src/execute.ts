@@ -121,8 +121,9 @@ async function submitUsdcWork(opts: {
   feeCollector: Address
   token: Address
   decimals: number
-  permissionContext: Delegation[]
-  authEntry: AuthorizationListEntry
+  permissionContext: Delegation[] | Hex
+  /** 7702 auth for the executing EOA. Omit when the delegator is already a smart account. */
+  authEntry?: AuthorizationListEntry
   to: Address
   amount: bigint
   memo: string
@@ -130,12 +131,13 @@ async function submitUsdcWork(opts: {
   const probeFee = 10n ** BigInt(opts.decimals) / 2n // 0.5 USDC probe
   const feeExec = (amt: bigint) => erc20TransferExecution(opts.token, opts.feeCollector, amt)
   const workExec = erc20TransferExecution(opts.token, opts.to, opts.amount)
+  const authList = opts.authEntry ? [opts.authEntry] : undefined
 
   const estimate = await opts.relayer.estimate7710({
     chainId: opts.chainId,
     permissionContext: opts.permissionContext,
     executions: [feeExec(probeFee), workExec],
-    authorizationList: [opts.authEntry],
+    ...(authList ? { authorizationList: authList } : {}),
   })
   const required = estimate.requiredPaymentAmount
     ? BigInt(estimate.requiredPaymentAmount)
@@ -146,7 +148,7 @@ async function submitUsdcWork(opts: {
     chainId: opts.chainId,
     permissionContext: opts.permissionContext,
     executions: [feeExec(fee), workExec],
-    authorizationList: [opts.authEntry],
+    ...(authList ? { authorizationList: authList } : {}),
     context: estimate.context,
     memo: opts.memo,
   })
@@ -392,4 +394,47 @@ export async function relayHiredUsdcTransfer(opts: RelayHireOpts): Promise<Relay
     endpoint: opts.endpoint,
     ...(opts.environment ? { environment: opts.environment } : {}),
   })
+}
+
+export interface RelayGrantedOpts {
+  /** ERC-7715 permission context (encoded), granted to the 1Shot redeemer. */
+  permissionContext: Hex
+  chainId: number
+  rpcUrl?: string
+  endpoint: string
+  to: Address
+  amount: bigint
+}
+
+/**
+ * Spend a USDC budget that a user granted via **MetaMask ERC-7715** (`compass
+ * connect`). The granted permission is redeemed through 1Shot — gas paid in USDC,
+ * bounded by the on-chain permission. No 7702 authorization: the funding account
+ * is the user's MetaMask smart account, which is already a smart account.
+ */
+export async function relayGrantedTransfer(opts: RelayGrantedOpts): Promise<RelayResult> {
+  const relayer = new OneShotRelayer({ endpoint: opts.endpoint })
+  const caps = (await relayer.getCapabilities([opts.chainId]))[String(opts.chainId)]
+  if (!caps) throw new Error(`relayer has no capabilities for chain ${opts.chainId}`)
+  const usdc = selectFeeToken(caps, 'USDC')
+
+  return submitUsdcWork({
+    relayer,
+    chainId: opts.chainId,
+    feeCollector: caps.feeCollector,
+    token: usdc.address,
+    decimals: Number(usdc.decimals),
+    permissionContext: opts.permissionContext,
+    to: opts.to,
+    amount: opts.amount,
+    memo: 'compass-granted',
+  })
+}
+
+/** The 1Shot redeemer address for a chain — the grantee a `compass connect` budget targets. */
+export async function relayerTarget(chainId: number, endpoint: string): Promise<Address> {
+  const relayer = new OneShotRelayer({ endpoint })
+  const caps = (await relayer.getCapabilities([chainId]))[String(chainId)]
+  if (!caps) throw new Error(`relayer has no capabilities for chain ${chainId}`)
+  return caps.targetAddress
 }
