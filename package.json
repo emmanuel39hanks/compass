@@ -1,0 +1,34 @@
+{
+  "name": "compass",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-agent coordination harness where agents grant each other scoped, revocable on-chain authority via MetaMask redelegation (ERC-7710/7715), reason with Venice AI, and execute gaslessly through the 1Shot permissionless relayer.",
+  "license": "MIT",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": {
+    "bun": ">=1.1"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --timeout 30000 packages/*/src",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "fix": "biome check --write .",
+    "compass": "bun packages/cli/bin/compass"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@compass_agents/brain-venice": "workspace:*",
+    "@compass_agents/delegation": "workspace:*",
+    "@compass_agents/gateway": "workspace:*",
+    "@compass_agents/plugin-a2a": "workspace:*",
+    "@compass_agents/plugin-telegram": "workspace:*",
+    "@compass_agents/relayer-1shot": "workspace:*",
+    "@types/bun": "^1.1.14",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "viem": "^2.31.4"
+  }
+}

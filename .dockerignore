@@ -1,0 +1,14 @@
+.git
+node_modules
+**/node_modules
+lib
+contracts/lib
+contracts/out
+contracts/cache
+contracts/broadcast
+videos
+.compass
+.env
+.env.*
+compass.config.json
+*.log

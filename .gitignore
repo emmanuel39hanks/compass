@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+build/
+*.tsbuildinfo
+
+# Bun
+# NOTE: commit bun.lock for reproducible CI installs (frozen-lockfile)
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
+broadcast/
+lcov.info
+
+# Environment & secrets
+.env
+.env.local
+.env*.local
+
+# OS
+.DS_Store
+
+# Claude context (local only)
+.claude/
+CLAUDE.md
+
+# Internal docs (kept local, not part of the public repo)
+docs/
+
+# Logs
+*.log
+
+# Local agent state (per-machine, never committed)
+.compass/
+compass.config.ts
+
+# Test fixtures with private keys
+test/fixtures/keys/
+
+# Local integration tests (real APIs / mainnet relays). The scripts ARE
+# committed — they read all secrets from .env (gitignored above), never inline.
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Web app build outputs
+apps/web/.next/
+apps/web/.vercel/
+apps/web/out/
+.vercel
+
+# Installed agent skills (reinstall via: npx skills add ...)
+.agents/
+
+# Video project + recording script (kept local, not part of the public repo)
+videos/
+VIDEO-SCRIPT.md
+compass.config.json
+
+# Internal tooling / scaffolding (not part of the public repo)
+skills-lock.json
+.skills/
+
+# Foundry libs (cloned, not committed)
+/lib/
