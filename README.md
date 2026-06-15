@@ -91,12 +91,28 @@ Six layers, each a workspace package:
 Requires [bun](https://bun.sh) ≥ 1.1 (the CLI runs on bun).
 
 ```bash
-npm i -g @compass_agents/cli          # or: bun add -g @compass_agents/cli
-compass init --name scout --budget "25 USDC/week"
-export VENICE_API_KEY=…        # free key: venice.ai/settings/api/keys
-export COMPASS_PRIVATE_KEY=…   # a burner; fund with Base Sepolia USDC (faucet.circle.com)
-compass doctor                 # check you're ready for a real on-chain action
-compass                        # chat — "what's my balance?", "send 0.1 USDC to 0x…"
+npm i -g @compass_agents/cli      # bun required (the CLI runs on bun)
+compass init                      # interactive setup — it asks you everything:
+                                  #   network · name · budget · wallet · Venice key
+compass                           # chat: "what's my balance?", "send 5 USDC to 0x…"
+```
+
+`compass init` is a guided wizard — it can **generate a wallet** (or connect MetaMask),
+takes your free [Venice](https://venice.ai/settings/api/keys) key, and writes a local
+`.env` so `compass` just works. Fund the wallet it shows you with Base Sepolia USDC
+([faucet](https://faucet.circle.com)), then go.
+
+```
+🧭  compass — set up your agent
+│  Which network?               ›  Base Sepolia (testnet)
+│  Name your agent              ›  scout
+│  Weekly spending limit        ›  25 USDC/week
+│  How should your agent get funds?
+│     › Connect MetaMask & grant a budget   (ERC-7715 · needs Flask)
+│       Generate a new burner wallet        (testnet — simplest)
+│       Paste an existing private key
+│  Venice API key               ›  ••••••••
+└  ✓ ready — run `compass`
 ```
 
 Then make it real:
@@ -105,7 +121,7 @@ Then make it real:
 compass connect                # grant a budget from MetaMask in the browser (ERC-7715)
 compass register scout         # mint your agent identity NFT on Base (you own it)
 compass serve                  # text your agent from Telegram (set TELEGRAM_BOT_TOKEN)
-compass logs                   # the activity log (every tool call + on-chain action)
+compass doctor                 # readiness check · compass logs — activity log
 ```
 
 ### Develop
