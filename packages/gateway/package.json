@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/gateway",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "type": "module",
   "description": "Long-lived agent gateway: one brain, many surfaces (TUI, Telegram, A2A). Pairing gate, per-chat sessions, surface-bridged approvals.",
   "license": "MIT",
@@ -10,7 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@compass_agents/core": "0.1.3"
+    "@compass_agents/core": "0.1.5"
   },
   "devDependencies": {
     "zod": "^3.23.8"
@@ -21,8 +21,8 @@
   "files": ["src"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/compass-agents/compass.git",
+    "url": "git+https://github.com/emmanuel39hanks/compass.git",
     "directory": "packages/gateway"
   },
-  "homepage": "https://github.com/compass-agents/compass#readme"
+  "homepage": "https://github.com/emmanuel39hanks/compass#readme"
 }

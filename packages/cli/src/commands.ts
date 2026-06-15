@@ -6,6 +6,7 @@ export interface ParsedCommand {
 
 export const COMMANDS = [
   'init',
+  'connect',
   'register',
   'chat',
   'serve',
@@ -61,7 +62,8 @@ export function helpText(): string {
     'Usage: compass <command> [options]',
     '',
     'Commands:',
-    '  init         Create a smart account + signer and write compass.config.ts',
+    '  init         Set up your agent (interactive): wallet, budget, keys',
+    '  connect      Connect MetaMask and grant the agent a budget (ERC-7715)',
     '  register     Mint your agent identity NFT on Base (own it on-chain)',
     '  chat         Talk to the principal agent (Venice brain)',
     '  serve        Run the agent as a gateway — text it from Telegram',

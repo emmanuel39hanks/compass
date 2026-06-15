@@ -34,13 +34,14 @@ import { base, baseSepolia } from 'viem/chains'
 import { X402Facilitator } from '@compass_agents/x402'
 import { buildOnchainTools } from '../src/agent-tools'
 import { COMPASS_SYSTEM, createSession, makeMemoryTools, startRepl } from '../src/chat'
+import { runConnect } from '../src/connect'
 import { makeWebTools } from '../src/web-tools'
 import { helpText, isKnownCommand, parseArgv } from '../src/commands'
 import { runDemoSpine } from '../src/demo'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.4'
+const VERSION = '0.1.5'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -204,6 +205,43 @@ function runStatus() {
   }
   const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
   console.log(renderStatus(config))
+}
+
+/** `compass connect` — grant the agent a budget from real MetaMask (ERC-7715). */
+async function runConnectCmd() {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log('run `compass init` first.')
+    return
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  const pk = process.env.COMPASS_PRIVATE_KEY
+  const agentAddress = pk && addrOf(pk)
+  if (!agentAddress) {
+    console.log('set COMPASS_PRIVATE_KEY first — that is the agent account MetaMask grants to.')
+    return
+  }
+  if (!config.budget) {
+    console.log('set a budget first:  compass budget --recurring "25 USDC/week"')
+    return
+  }
+  const budget = `${config.budget.amount} ${config.budget.token}/${config.budget.period}`
+  console.log('Opening your browser to connect MetaMask…')
+  console.log('(ERC-7715 advanced permissions require MetaMask Flask.)\n')
+  try {
+    const granted = await runConnect({
+      agentAddress,
+      chainId: config.network.chainId,
+      budget,
+      ...(config.network.rpcUrl ? { rpcUrl: config.network.rpcUrl } : {}),
+      outPath: '.compass/permission.json',
+    })
+    console.log(`\n✓ MetaMask granted ${granted.budget.amount} ${granted.budget.token}/${granted.budget.period}`)
+    console.log(`  from   ${granted.account}`)
+    console.log(`  to     your agent ${granted.grantee}`)
+    console.log('  saved  .compass/permission.json — the agent can now spend within it.')
+  } catch (err) {
+    console.error(`connect failed: ${err.message}`)
+  }
 }
 
 async function runDemo() {
@@ -525,6 +563,10 @@ async function main() {
   }
   if (name === 'init') {
     await runInit(flags)
+    return
+  }
+  if (name === 'connect') {
+    await runConnectCmd()
     return
   }
   if (name === 'register') {

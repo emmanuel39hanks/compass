@@ -66,13 +66,27 @@ you › hire a helper to pay 0x1234… 0.05 USDC
 Anything that spends asks for approval, and the agent can **never exceed your
 budget** — that limit is an on-chain caveat, not a setting it can ignore.
 
-## 5. Own your agent (on-chain identity)
+## 5. (Optional) Connect MetaMask instead of a local key
+
+Instead of the agent holding a key, grant it a budget straight from **your real
+MetaMask** wallet:
+
+```bash
+compass connect
+```
+
+This opens your browser to a local page where you connect MetaMask and grant the
+agent a spending budget via **ERC-7715 advanced permissions** (the MetaMask Smart
+Accounts "request permissions" popup). The agent then spends within that budget,
+gaslessly, and you can revoke any time. *Requires MetaMask Flask for ERC-7715.*
+
+## 6. Own your agent (on-chain identity)
 
 ```bash
 compass register scout      # mint your agent identity NFT on Base — you own it
 ```
 
-## 6. Reach it from anywhere (Telegram)
+## 7. Reach it from anywhere (Telegram)
 
 ```bash
 export TELEGRAM_BOT_TOKEN=your_botfather_token
@@ -88,7 +102,8 @@ Unknown senders get a pairing code; approve them with
 | Command | What it does |
 |---|---|
 | `compass` | Chat with your agent (REPL) |
-| `compass init` | Create config + derive your account |
+| `compass init` | Interactive setup: wallet, budget, keys |
+| `compass connect` | Grant a budget from MetaMask in the browser (ERC-7715) |
 | `compass doctor` | Readiness check (keys, network, balances) |
 | `compass register <name>` | Mint your agent identity NFT |
 | `compass serve` | Run as a gateway — reachable on Telegram |

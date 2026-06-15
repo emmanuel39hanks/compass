@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "Compass CLI/TUI: compass init / chat / delegate / redelegate / revoke / status, with a live 1Shot webhook tx feed.",
   "license": "MIT",
@@ -14,14 +14,14 @@
   },
   "dependencies": {
     "@clack/prompts": "^0.7.0",
-    "@compass_agents/brain-venice": "0.1.3",
-    "@compass_agents/core": "0.1.3",
-    "@compass_agents/delegation": "0.1.3",
-    "@compass_agents/gateway": "0.1.3",
-    "@compass_agents/plugin-a2a": "0.1.3",
-    "@compass_agents/plugin-telegram": "0.1.3",
-    "@compass_agents/relayer-1shot": "0.1.3",
-    "@compass_agents/x402": "0.1.3",
+    "@compass_agents/brain-venice": "0.1.5",
+    "@compass_agents/core": "0.1.5",
+    "@compass_agents/delegation": "0.1.5",
+    "@compass_agents/gateway": "0.1.5",
+    "@compass_agents/plugin-a2a": "0.1.5",
+    "@compass_agents/plugin-telegram": "0.1.5",
+    "@compass_agents/relayer-1shot": "0.1.5",
+    "@compass_agents/x402": "0.1.5",
     "viem": "^2.31.4",
     "zod": "^3.23.8"
   },
@@ -31,8 +31,8 @@
   "files": ["src", "bin"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/compass-agents/compass.git",
+    "url": "git+https://github.com/emmanuel39hanks/compass.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/compass-agents/compass#readme"
+  "homepage": "https://github.com/emmanuel39hanks/compass#readme"
 }

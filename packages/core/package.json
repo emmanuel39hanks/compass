@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/core",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "type": "module",
   "description": "Chain-agnostic agent harness: Brain interface, tool registry, events/runtime loop, approval gates, local memory, config.",
   "license": "MIT",
@@ -19,8 +19,8 @@
   "files": ["src"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/compass-agents/compass.git",
+    "url": "git+https://github.com/emmanuel39hanks/compass.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/compass-agents/compass#readme"
+  "homepage": "https://github.com/emmanuel39hanks/compass#readme"
 }

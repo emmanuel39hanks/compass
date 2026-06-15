@@ -102,6 +102,7 @@ compass                        # chat — "what's my balance?", "send 0.1 USDC t
 Then make it real:
 
 ```bash
+compass connect                # grant a budget from MetaMask in the browser (ERC-7715)
 compass register scout         # mint your agent identity NFT on Base (you own it)
 compass serve                  # text your agent from Telegram (set TELEGRAM_BOT_TOKEN)
 compass logs                   # the activity log (every tool call + on-chain action)

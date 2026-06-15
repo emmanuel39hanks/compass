@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/x402",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "type": "module",
   "description": "x402 client (auto 402 -> pay -> retry) and an ERC-7710 facilitator (verify by simulating redeemDelegations, settle via the 1Shot relayer).",
   "license": "MIT",
@@ -10,8 +10,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@compass_agents/delegation": "0.1.3",
-    "@compass_agents/relayer-1shot": "0.1.3",
+    "@compass_agents/delegation": "0.1.5",
+    "@compass_agents/relayer-1shot": "0.1.5",
     "viem": "^2.31.4"
   },
   "publishConfig": {
@@ -20,8 +20,8 @@
   "files": ["src"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/compass-agents/compass.git",
+    "url": "git+https://github.com/emmanuel39hanks/compass.git",
     "directory": "packages/x402"
   },
-  "homepage": "https://github.com/compass-agents/compass#readme"
+  "homepage": "https://github.com/emmanuel39hanks/compass#readme"
 }
