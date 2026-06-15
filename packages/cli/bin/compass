@@ -1,0 +1,566 @@
+#!/usr/bin/env bun
+/**
+ * compass CLI entrypoint. Shebangs `bun` so .ts runs directly (no build step).
+ * `compass demo` runs the offline end-to-end spine.
+ */
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { VeniceBrain } from '@compass_agents/brain-venice'
+import {
+  ActivityLog,
+  MemoryStore,
+  StubBrain,
+  ToolRegistry,
+  exportMemory,
+  importMemory,
+  parseConfig,
+} from '@compass_agents/core'
+import {
+  COMPASS_AGENT_REGISTRY,
+  PERIOD_SECONDS,
+  USDC_BY_CHAIN,
+  budgetWindow,
+  getSmartAccountsEnvironment,
+  parseBudget,
+  registerAgent,
+} from '@compass_agents/delegation'
+import { Gateway, PairingStore } from '@compass_agents/gateway'
+import { publicKeyFor } from '@compass_agents/plugin-a2a'
+import { TelegramClient, TelegramListener } from '@compass_agents/plugin-telegram'
+import { readErc20Balance } from '@compass_agents/relayer-1shot'
+import * as clack from '@clack/prompts'
+import { createPublicClient, createWalletClient, formatEther, formatUnits, http } from 'viem'
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
+import { base, baseSepolia } from 'viem/chains'
+import { X402Facilitator } from '@compass_agents/x402'
+import { buildOnchainTools } from '../src/agent-tools'
+import { COMPASS_SYSTEM, createSession, makeMemoryTools, startRepl } from '../src/chat'
+import { makeWebTools } from '../src/web-tools'
+import { helpText, isKnownCommand, parseArgv } from '../src/commands'
+import { runDemoSpine } from '../src/demo'
+import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
+import { renderStatus } from '../src/status'
+
+const VERSION = '0.1.3'
+const CONFIG_PATH = 'compass.config.json'
+
+const ENV_PATH = '.env'
+
+function addrOf(pk) {
+  try {
+    return privateKeyToAccount(pk).address
+  } catch {
+    return undefined
+  }
+}
+
+/** `compass init` — interactive wizard in a TTY, non-interactive when flags/CI. */
+async function runInit(flags) {
+  const scripted =
+    flags.name || flags.network || flags.budget || flags.signer || flags.yes || !process.stdin.isTTY
+  return scripted ? runInitScripted(flags) : runInitWizard()
+}
+
+/** Non-interactive (flags / CI / Railway): build config from flags + env, write it. */
+function runInitScripted(flags) {
+  const pk = process.env.COMPASS_PRIVATE_KEY
+  const config = buildInitConfig({
+    network: flags.network,
+    budget: typeof flags.budget === 'string' ? flags.budget : undefined,
+    agentName: typeof flags.name === 'string' ? flags.name : undefined,
+    signerSource: flags.signer,
+    ...(pk && addrOf(pk) ? { smartAccount: addrOf(pk) } : {}),
+  })
+  writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`)
+  console.log(`✓ wrote ${CONFIG_PATH}`)
+  console.log(renderStatus(parseConfig(config)))
+}
+
+/** The friendly setup wizard: asks questions, generates a wallet, writes .env. */
+async function runInitWizard() {
+  clack.intro('🧭  compass — set up your agent')
+
+  if (existsSync(CONFIG_PATH)) {
+    const ok = await clack.confirm({ message: `${CONFIG_PATH} already exists — start fresh?`, initialValue: false })
+    if (clack.isCancel(ok) || !ok) return clack.cancel('Kept your existing setup.')
+  }
+
+  const network = await clack.select({
+    message: 'Which network?',
+    options: [
+      { value: 'base-sepolia', label: 'Base Sepolia', hint: 'testnet — recommended' },
+      { value: 'base', label: 'Base mainnet', hint: 'real funds' },
+    ],
+    initialValue: 'base-sepolia',
+  })
+  if (clack.isCancel(network)) return clack.cancel('Aborted.')
+
+  const name = await clack.text({ message: 'Name your agent', placeholder: 'scout', defaultValue: 'scout' })
+  if (clack.isCancel(name)) return clack.cancel('Aborted.')
+
+  const budget = await clack.text({
+    message: 'Weekly spending limit',
+    placeholder: '25 USDC/week',
+    defaultValue: '25 USDC/week',
+    validate: v => {
+      if (!v) return
+      try {
+        parseBudget(v)
+      } catch {
+        return 'Use a form like "25 USDC/week"'
+      }
+    },
+  })
+  if (clack.isCancel(budget)) return clack.cancel('Aborted.')
+
+  // ── Wallet ──
+  const envPk = process.env.COMPASS_PRIVATE_KEY
+  const walletChoice = await clack.select({
+    message: 'Wallet for your agent',
+    options: [
+      ...(envPk && addrOf(envPk) ? [{ value: 'keep', label: `Use the key already set (${addrOf(envPk).slice(0, 12)}…)` }] : []),
+      { value: 'generate', label: 'Generate a new burner wallet', hint: 'testnet only' },
+      { value: 'paste', label: 'Paste an existing private key' },
+    ],
+    initialValue: envPk && addrOf(envPk) ? 'keep' : 'generate',
+  })
+  if (clack.isCancel(walletChoice)) return clack.cancel('Aborted.')
+
+  let pk = envPk
+  if (walletChoice === 'generate') {
+    pk = generatePrivateKey()
+    clack.note(`${addrOf(pk)}\n\nSaved to .env — a testnet burner. Never fund it with real value.`, 'New wallet')
+  } else if (walletChoice === 'paste') {
+    const entered = await clack.password({
+      message: 'Private key (0x…)',
+      validate: v => (addrOf(v) ? undefined : 'That is not a valid private key'),
+    })
+    if (clack.isCancel(entered)) return clack.cancel('Aborted.')
+    pk = entered
+  }
+
+  // ── Venice key ──
+  let venice = process.env.VENICE_API_KEY
+  if (!venice) {
+    const entered = await clack.password({
+      message: 'Venice API key  (free at venice.ai/settings/api/keys — press Enter to add later)',
+    })
+    if (clack.isCancel(entered)) return clack.cancel('Aborted.')
+    venice = entered || undefined
+  }
+
+  // ── Write config + .env ──
+  const agentName = name || 'scout'
+  const account = pk ? addrOf(pk) : undefined
+  const config = buildInitConfig({
+    network,
+    agentName,
+    budget: budget || '25 USDC/week',
+    ...(account ? { smartAccount: account } : {}),
+  })
+  writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`)
+
+  const kv = {}
+  if (pk && pk !== envPk) kv.COMPASS_PRIVATE_KEY = pk
+  if (venice && venice !== process.env.VENICE_API_KEY) kv.VENICE_API_KEY = venice
+  if (Object.keys(kv).length) {
+    const cur = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, 'utf8') : ''
+    writeFileSync(ENV_PATH, upsertEnv(cur, kv), { mode: 0o600 })
+  }
+
+  clack.note(
+    [
+      `agent     ${agentName}`,
+      `network   ${NETWORKS[network].name}`,
+      `wallet    ${account ?? '(none yet)'}`,
+      `budget    ${budget || '25 USDC/week'}`,
+      `venice    ${venice ? '✓ set' : '— add later'}`,
+    ].join('\n'),
+    'Your agent',
+  )
+
+  const steps = []
+  if (account) {
+    steps.push(
+      network === 'base-sepolia'
+        ? 'Fund your wallet with testnet USDC → faucet.circle.com'
+        : 'Fund your wallet with a little USDC on Base',
+    )
+  }
+  if (!venice) steps.push('Add a Venice key: set VENICE_API_KEY (or re-run init)')
+  steps.push('Run  compass  — and just talk to your agent')
+  clack.outro(`Next:\n   ${steps.map((s, i) => `${i + 1}. ${s}`).join('\n   ')}`)
+}
+
+function runStatus() {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log('not initialized — run `compass init` first.')
+    return
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  console.log(renderStatus(config))
+}
+
+async function runDemo() {
+  const chainId = 11155111
+  const environment = getSmartAccountsEnvironment(chainId)
+  const brain = new StubBrain([
+    {
+      content: 'Plan: (1) research the price via a paid feed, (2) swap via the router.',
+      toolCalls: [],
+    },
+  ])
+  const relayer = { send7710: () => Promise.resolve(`0x${'a'.repeat(64)}`) }
+  const facilitator = new X402Facilitator({
+    simulate: () => Promise.resolve(true),
+    settle: () => Promise.resolve(`0x${'b'.repeat(64)}`),
+  })
+  // @ts-expect-error bin is not typechecked; mocks satisfy the structural shape at runtime.
+  const res = await runDemoSpine({ brain, relayer, facilitator, environment, chainId })
+  console.log('compass demo — A2A redelegation + Venice + 1Shot + x402\n')
+  for (const beat of res.beats) console.log(`  ${beat.step}. ${beat.title}: ${beat.detail}`)
+  console.log(`\n  taskId: ${res.taskId}`)
+}
+
+async function runRegister(agentName) {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log('run `compass init` first.')
+    return
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  const pk = process.env.COMPASS_PRIVATE_KEY
+  if (!pk) {
+    console.log('set COMPASS_PRIVATE_KEY to register your agent.')
+    return
+  }
+  const name = agentName || config.identity.agentName
+  if (!name) {
+    console.log('usage: compass register <name>')
+    return
+  }
+  const chainId = config.network.chainId
+  const registry = COMPASS_AGENT_REGISTRY[chainId]
+  if (!registry) {
+    console.log(`no agent registry deployed for chain ${chainId} yet.`)
+    return
+  }
+  const account = privateKeyToAccount(pk)
+  const chain = chainId === 8453 ? base : baseSepolia
+  const publicClient = createPublicClient({ chain, transport: http(config.network.rpcUrl) })
+  const walletClient = createWalletClient({ account, chain, transport: http(config.network.rpcUrl) })
+  console.log(`registering "${name}" on ${config.network.name ?? chainId}…`)
+  try {
+    const { agentId, txHash } = await registerAgent({
+      walletClient,
+      publicClient,
+      registry,
+      owner: account.address,
+      name,
+      agentCardURI: `https://compass.app/a/${name}`,
+      agentAccount: account.address,
+      // The agent's secp256k1 messaging pubkey — peers seal A2A grants to it.
+      pubkey: publicKeyFor(pk),
+    })
+    config.identity.agentId = agentId.toString()
+    config.identity.agentName = name
+    writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`)
+    console.log(`✓ minted agent #${agentId} "${name}" — you own it. tx ${txHash}`)
+  } catch (err) {
+    console.error(`register failed: ${err.message}`)
+  }
+}
+
+async function runChat() {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log('not initialized — run `compass init` first.')
+    return
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  const apiKey = process.env.VENICE_API_KEY
+  if (!apiKey) {
+    console.log('set VENICE_API_KEY to chat — get a free key at venice.ai/settings/api/keys')
+    return
+  }
+  const brain = new VeniceBrain({ apiKey, model: config.brain.model })
+  const memory = new MemoryStore('.compass/memory')
+
+  // Wire on-chain capabilities when an operator key is present.
+  const pk = process.env.COMPASS_PRIVATE_KEY
+  const extraTools = [...makeWebTools(), ...(pk ? buildOnchainTools(config, pk) : [])]
+
+  const session = createSession({ brain, memory, approvalsMode: config.approvals.mode, extraTools })
+  await startRepl(session)
+}
+
+/** Build the gateway's ToolRegistry: memory tools + on-chain tools (when keyed). */
+function buildGatewayTools(config, pk) {
+  const tools = new ToolRegistry()
+  for (const tool of makeMemoryTools()) tools.register(tool)
+  for (const tool of makeWebTools()) tools.register(tool)
+  if (pk) for (const tool of buildOnchainTools(config, pk)) tools.register(tool)
+  return tools
+}
+
+/** `compass serve` — run the agent as a long-lived gateway (Telegram + A2A). */
+async function runServe() {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log('not initialized — run `compass init` first.')
+    return
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  const apiKey = process.env.VENICE_API_KEY
+  if (!apiKey) {
+    console.log('set VENICE_API_KEY to serve — get a free key at venice.ai/settings/api/keys')
+    return
+  }
+  const pk = process.env.COMPASS_PRIVATE_KEY
+  const brain = new VeniceBrain({ apiKey, model: config.brain.model })
+  const memory = new MemoryStore('.compass/memory')
+  const pairing = new PairingStore({ path: '.compass/pairing.json' })
+  const gateway = new Gateway({
+    brain,
+    tools: buildGatewayTools(config, pk),
+    memory,
+    system: COMPASS_SYSTEM,
+    approvalsMode: config.approvals.mode,
+    pairing,
+    activity: new ActivityLog('.compass/activity.jsonl'),
+    persistHistory: true,
+    compaction: { threshold: 40, keepRecent: 14 },
+    ...(config.identity.agentName ? { agentName: config.identity.agentName } : {}),
+  })
+
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN
+  if (!botToken) {
+    console.log('gateway ready, but no TELEGRAM_BOT_TOKEN set — nothing to listen on.')
+    console.log('get a token from @BotFather, then: TELEGRAM_BOT_TOKEN=… compass serve')
+    return
+  }
+  const client = new TelegramClient({ token: botToken })
+  let me
+  try {
+    me = await client.getMe()
+  } catch (err) {
+    console.error(`telegram auth failed: ${err.message}`)
+    return
+  }
+  const listener = new TelegramListener({
+    client,
+    gateway,
+    onError: err => console.error(`telegram: ${err?.message ?? err}`),
+  })
+  console.log(`✓ compass is live on Telegram as @${me.username}. Text it to begin.`)
+  console.log('  unknown senders get a pairing code → `compass pairing approve telegram <code>`')
+  await listener.start()
+}
+
+/** `compass pairing <list|approve|revoke> [surface] [code|id]` */
+function runPairing(args) {
+  const store = new PairingStore({ path: '.compass/pairing.json' })
+  const [sub, surface, value] = args
+  if (sub === 'list') {
+    const rows = store.list(surface)
+    console.log(rows.length ? rows.map(r => `${r.surface}  ${r.id}`).join('\n') : '(no paired senders)')
+    return
+  }
+  if (sub === 'approve' && surface && value) {
+    const id = store.approve(surface, value)
+    if (id) console.log(`✓ approved ${surface} sender ${id}`)
+    else {
+      store.approveId(surface, value) // treat the value as a direct id
+      console.log(`✓ approved ${surface} ${value}`)
+    }
+    return
+  }
+  if (sub === 'revoke' && surface && value) {
+    console.log(store.revoke(surface, value) ? `✓ revoked ${surface} ${value}` : 'nothing to revoke')
+    return
+  }
+  console.log('usage: compass pairing <list|approve|revoke> [surface] [code|id]')
+}
+
+/** `compass doctor` — check the environment is ready for a real on-chain action. */
+async function runDoctor() {
+  const ok = (m) => console.log(`  ✓ ${m}`)
+  const warn = (m) => console.log(`  ⚠ ${m}`)
+  const bad = (m) => console.log(`  ✗ ${m}`)
+  console.log('compass doctor — readiness check\n')
+
+  ok(`runtime: bun ${process.versions.bun ?? '(node)'}`)
+
+  if (!existsSync(CONFIG_PATH)) {
+    bad('config: not initialized — run `compass init`')
+    return
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  ok(`config: ${config.network.name ?? config.network.chainId}`)
+
+  process.env.VENICE_API_KEY ? ok('VENICE_API_KEY set') : warn('VENICE_API_KEY not set — chat/serve disabled')
+
+  const pk = process.env.COMPASS_PRIVATE_KEY
+  if (!pk) {
+    warn('COMPASS_PRIVATE_KEY not set — on-chain actions disabled')
+  } else {
+    const account = privateKeyToAccount(pk).address
+    ok(`operator: ${account}`)
+    const chainId = config.network.chainId
+    const chain = chainId === 8453 ? base : baseSepolia
+    const client = createPublicClient({ chain, transport: http(config.network.rpcUrl) })
+    try {
+      const block = await client.getBlockNumber()
+      ok(`network: chain ${chainId} reachable (block ${block})`)
+    } catch {
+      bad(`network: chain ${chainId} unreachable — check rpcUrl`)
+    }
+    try {
+      const eth = await client.getBalance({ address: account })
+      eth > 0n ? ok(`gas: ${formatEther(eth)} ETH`) : warn('gas: 0 ETH — needed to register/revoke (faucet)')
+    } catch {}
+    const token = USDC_BY_CHAIN[chainId]
+    if (token) {
+      try {
+        const usdc = await readErc20Balance({ chainId, rpcUrl: config.network.rpcUrl, token, account })
+        usdc > 0n
+          ? ok(`balance: ${formatUnits(usdc, 6)} USDC`)
+          : warn('balance: 0 USDC — fund the burner (faucet.circle.com) to relay')
+      } catch {}
+    }
+    COMPASS_AGENT_REGISTRY[chainId]
+      ? ok(`registry: deployed at ${COMPASS_AGENT_REGISTRY[chainId]}`)
+      : warn(`registry: none deployed on chain ${chainId}`)
+    config.identity.agentId
+      ? ok(`identity: agent #${config.identity.agentId} "${config.identity.agentName ?? ''}"`)
+      : warn('identity: not registered — run `compass register <name>`')
+  }
+  console.log('\ndone.')
+}
+
+/** `compass budget [--recurring "25 USDC/week"]` — set/show the recurring budget. */
+function runBudget(flags) {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log('not initialized — run `compass init` first.')
+    return
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  if (flags.recurring && typeof flags.recurring === 'string') {
+    const spec = parseBudget(flags.recurring)
+    config.budget = { token: spec.token, amount: spec.amount, period: spec.period }
+    writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`)
+    console.log(`✓ budget set to ${spec.amount} ${spec.token}/${spec.period}`)
+  }
+  const b = config.budget
+  if (!b) {
+    console.log('no budget set. usage: compass budget --recurring "25 USDC/week"')
+    return
+  }
+  const periodSeconds = PERIOD_SECONDS[b.period]
+  // Anchored to the same epoch the on-chain caveat uses, so the displayed reset
+  // matches when the allowance actually refreshes.
+  const now = Math.floor(Date.now() / 1000)
+  const win = budgetWindow(periodSeconds, 1_700_000_000, now)
+  const resetIn = Math.max(0, win.nextReset - now)
+  const days = Math.floor(resetIn / 86_400)
+  const hours = Math.floor((resetIn % 86_400) / 3600)
+  console.log(`Budget:    ${b.amount} ${b.token} / ${b.period}`)
+  console.log('Recurring: auto-resets on-chain each period — no new signature needed.')
+  console.log(`Resets in: ${days}d ${hours}h (period ${win.periodIndex})`)
+}
+
+/** `compass logs [--tail N]` — show the activity log. */
+async function runLogs(flags) {
+  const n = flags.tail ? Number(flags.tail) : 20
+  const entries = await new ActivityLog('.compass/activity.jsonl').tail(n)
+  if (!entries.length) {
+    console.log('(no activity yet)')
+    return
+  }
+  for (const e of entries) {
+    const time = e.ts.replace('T', ' ').replace(/\..*$/, '')
+    console.log(`${time}  ${e.kind.padEnd(7)}  ${e.summary}`)
+  }
+}
+
+/** `compass memory <export|import> <file>` — encrypted, portable agent memory. */
+async function runMemory(args) {
+  const [sub, file] = args
+  const pass = process.env.MEMORY_PASSPHRASE || process.env.COMPASS_PRIVATE_KEY
+  if (!pass) {
+    console.log('set MEMORY_PASSPHRASE (or COMPASS_PRIVATE_KEY) to encrypt/decrypt memory.')
+    return
+  }
+  if (sub === 'export' && file) {
+    const blob = await exportMemory('.compass/memory', pass)
+    writeFileSync(file, `${JSON.stringify(blob, null, 2)}\n`)
+    console.log(`✓ exported encrypted memory → ${file}`)
+    return
+  }
+  if (sub === 'import' && file) {
+    const blob = JSON.parse(readFileSync(file, 'utf8'))
+    const count = await importMemory(blob, pass, '.compass/memory')
+    console.log(`✓ imported ${count} memory file(s) from ${file}`)
+    return
+  }
+  console.log('usage: compass memory <export|import> <file>')
+}
+
+async function main() {
+  const argv = process.argv.slice(2)
+  if (argv.length === 0) {
+    await runChat()
+    return
+  }
+  const { name, args, flags } = parseArgv(argv)
+  if (name === 'version') {
+    console.log(`compass v${VERSION}`)
+    return
+  }
+  if (name === 'demo') {
+    await runDemo()
+    return
+  }
+  if (name === 'init') {
+    await runInit(flags)
+    return
+  }
+  if (name === 'register') {
+    await runRegister(args[0])
+    return
+  }
+  if (name === 'status') {
+    runStatus()
+    return
+  }
+  if (name === 'serve' || name === 'daemon') {
+    await runServe()
+    return
+  }
+  if (name === 'pairing') {
+    runPairing(args)
+    return
+  }
+  if (name === 'doctor') {
+    await runDoctor()
+    return
+  }
+  if (name === 'budget') {
+    runBudget(flags)
+    return
+  }
+  if (name === 'logs') {
+    await runLogs(flags)
+    return
+  }
+  if (name === 'memory') {
+    await runMemory(args)
+    return
+  }
+  if (name === 'help' || !isKnownCommand(name)) {
+    console.log(helpText())
+    return
+  }
+  console.log(`'${name}' is not yet interactive in this build — see docs/PHASES.md (Phase 6).`)
+}
+
+main().catch(err => {
+  console.error(err)
+  process.exit(1)
+})
