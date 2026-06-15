@@ -1,0 +1,32 @@
+{
+  "name": "@compass_agents/plugin-a2a",
+  "version": "0.1.3",
+  "type": "module",
+  "description": "Agent-to-agent coordination: redelegation transport (the delegation 'inbox'), peer/contact registry, and the coordination protocol.",
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@compass_agents/core": "0.1.3",
+    "@compass_agents/delegation": "0.1.3",
+    "@compass_agents/relayer-1shot": "0.1.3",
+    "@noble/ciphers": "^1.3.0",
+    "@noble/curves": "^1.9.1",
+    "@noble/hashes": "^1.8.0",
+    "viem": "^2.31.4",
+    "zod": "^3.23.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["src"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/compass-agents/compass.git",
+    "directory": "packages/plugin-a2a"
+  },
+  "homepage": "https://github.com/compass-agents/compass#readme"
+}

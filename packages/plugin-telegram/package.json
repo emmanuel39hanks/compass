@@ -1,0 +1,29 @@
+{
+  "name": "@compass_agents/plugin-telegram",
+  "version": "0.1.3",
+  "type": "module",
+  "description": "Telegram surface for the compass gateway: raw Bot API client, long-poll listener, pairing, inline-keyboard approvals, MarkdownV2 + message chunking.",
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@compass_agents/gateway": "0.1.3"
+  },
+  "devDependencies": {
+    "@compass_agents/core": "0.1.3",
+    "zod": "^3.23.8"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": ["src"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/compass-agents/compass.git",
+    "directory": "packages/plugin-telegram"
+  },
+  "homepage": "https://github.com/compass-agents/compass#readme"
+}
