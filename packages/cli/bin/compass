@@ -44,7 +44,7 @@ import { makeReputationTools } from '../src/reputation-tools'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.19'
+const VERSION = '0.1.20'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -384,7 +384,13 @@ async function runChat() {
   if (useTui) {
     try {
       const { runTui } = await import('../src/tui')
-      await runTui(session)
+      await runTui(session, {
+        network: config.network.name ?? `chain ${config.network.chainId}`,
+        ...(pk ? { account: privateKeyToAccount(pk).address } : {}),
+        ...(config.budget
+          ? { budget: `${config.budget.amount} ${config.budget.token}/${config.budget.period}` }
+          : {}),
+      })
       return
     } catch (err) {
       if (process.env.COMPASS_DEBUG) console.error('TUI unavailable, using basic chat:', err)

@@ -99,6 +99,19 @@ export const SLASH: Record<string, SlashSpec> = {
   },
 }
 
+export interface SlashInfo {
+  name: string
+  usage: string
+  desc: string
+}
+
+/** The commands this session can actually run (its registered tools), for menus. */
+export function slashCommands(session: ChatSession): SlashInfo[] {
+  return Object.entries(SLASH)
+    .filter(([, s]) => session.tools.has(s.tool))
+    .map(([name, s]) => ({ name, usage: s.usage, desc: s.desc }))
+}
+
 /** A help listing of the available commands (marks ones the session can't run). */
 export function slashHelp(session: ChatSession): string {
   const rows = [

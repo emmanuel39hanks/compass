@@ -10,19 +10,28 @@ import {
   createCliRenderer,
 } from '@opentui/core'
 import type { ChatSession } from './chat'
-import { handleSlash } from './slash'
+import { type SlashInfo, handleSlash, slashCommands } from './slash'
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 const TURN_TIMEOUT_MS = 120_000
 
 const C = {
   dim: '#6f6a5c',
+  brand: '#8fd6c0',
   you: '#ece9e0',
   agent: '#dceace',
   tool: '#8a8578',
   ok: '#5bd178',
   warn: '#e8c468',
   err: '#e06c75',
+  sel: '#f2efe6',
+}
+
+/** Live context shown in the header so you always know which chain you're on. */
+export interface TuiMeta {
+  network?: string
+  account?: string
+  budget?: string
 }
 
 function summarize(args: unknown): string {
@@ -36,15 +45,16 @@ function summarize(args: unknown): string {
 }
 
 /**
- * OpenTUI chat surface: a scrollable transcript, an animated status line, and a
- * focused input. Drives the same session/runTurn as the readline REPL. If the
- * native renderer can't start (no TTY, missing binary), {@link runTui} throws and
- * the caller falls back to the plain REPL — so `compass` always works.
+ * OpenTUI chat surface: a branded header with live chain status, a scrollable
+ * transcript, a command palette that filters as you type `/`, and a focused input.
+ * Drives the same session/runTurn as the readline REPL. If the native renderer
+ * can't start (no TTY, missing binary), {@link runTui} throws and the caller falls
+ * back to the plain REPL — so `compass` always works.
  */
-export async function runTui(session: ChatSession): Promise<void> {
+export async function runTui(session: ChatSession, meta: TuiMeta = {}): Promise<void> {
   const renderer = await createCliRenderer({ exitOnCtrlC: false })
   try {
-    await drive(renderer, session)
+    await drive(renderer, session, meta)
   } finally {
     try {
       renderer.destroy()
@@ -54,7 +64,7 @@ export async function runTui(session: ChatSession): Promise<void> {
   }
 }
 
-function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
+function drive(renderer: CliRenderer, session: ChatSession, meta: TuiMeta): Promise<void> {
   let resolveExit: () => void = () => {}
   const exited = new Promise<void>(r => {
     resolveExit = r
@@ -65,36 +75,64 @@ function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
     flexDirection: 'column',
     width: '100%',
     height: '100%',
-    padding: 1,
   })
   renderer.root.add(screen)
 
-  screen.add(
+  // ── Header: brand + live chain status ──────────────────────────────────────
+  const status = [meta.network, meta.account ? short(meta.account) : '', meta.budget]
+    .filter(Boolean)
+    .join('  ·  ')
+  const header = new BoxRenderable(renderer, {
+    id: 'header',
+    border: true,
+    borderStyle: 'rounded',
+    borderColor: C.dim,
+    title: ' compass ',
+    titleColor: C.brand,
+    paddingLeft: 1,
+    paddingRight: 1,
+  })
+  header.add(
     new TextRenderable(renderer, {
-      id: 'header',
-      content: 'compass · chat — tell your agent a goal. /exit or Ctrl-C to quit.',
+      id: 'headerText',
+      content: `your personal on-chain agent${status ? `      ${status}` : ''}`,
       fg: C.dim,
     }),
   )
+  screen.add(header)
 
+  // ── Transcript ──────────────────────────────────────────────────────────────
   const log = new ScrollBoxRenderable(renderer, {
     id: 'log',
     flexGrow: 1,
     scrollY: true,
     stickyScroll: true,
     stickyStart: 'bottom',
+    paddingLeft: 1,
+    paddingTop: 1,
   })
   screen.add(log)
 
-  const status = new TextRenderable(renderer, { id: 'status', content: '', fg: C.dim })
-  screen.add(status)
+  // ── Command palette (filters as you type `/`) + spinner/approval line ────────
+  const palette = new TextRenderable(renderer, { id: 'palette', content: '', fg: C.dim })
+  screen.add(palette)
+  const statusLine = new TextRenderable(renderer, { id: 'status', content: '', fg: C.dim })
+  screen.add(statusLine)
 
   const input = new InputRenderable(renderer, {
     id: 'input',
-    placeholder: 'send 5 USDC to 0x… · what is my balance? …',
+    placeholder: 'ask anything, or type / for commands',
   })
   screen.add(input)
   input.focus()
+
+  screen.add(
+    new TextRenderable(renderer, {
+      id: 'footer',
+      content: '↵ send    /  commands    ↑↓ pick · Tab complete    ^C quit',
+      fg: C.dim,
+    }),
+  )
 
   let lineId = 0
   const append = (content: string, fg?: string) => {
@@ -102,6 +140,20 @@ function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
     log.scrollTo(log.scrollHeight)
   }
 
+  // Welcome — say what compass is and how to drive it (so it's never a blank void).
+  append('Your personal on-chain agent — it acts within strict, revocable limits.', C.agent)
+  append('')
+  append('  send USDC · hire agents · pay & discover data (x402) · check reputation', C.dim)
+  append('  generate & analyze media · search the web · use connected MCP tools', C.dim)
+  append('')
+  append('Type  /  for commands, or just ask (e.g. "what\'s my balance?").', C.dim)
+  append(
+    'From your shell:  compass card  → publish an AgentCard   ·   compass-mcp  → MCP server',
+    C.dim,
+  )
+  append('')
+
+  // ── Spinner ───────────────────────────────────────────────────────────────
   let spinTimer: ReturnType<typeof setInterval> | null = null
   let frame = 0
   let label = ''
@@ -111,7 +163,7 @@ function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
       if (spinTimer) return
       spinTimer = setInterval(() => {
         frame = (frame + 1) % SPINNER.length
-        status.content = `${SPINNER[frame]} ${label}`
+        statusLine.content = `${SPINNER[frame]} ${label}`
       }, 90)
     },
     set(text: string) {
@@ -122,7 +174,7 @@ function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
         clearInterval(spinTimer)
         spinTimer = null
       }
-      status.content = ''
+      statusLine.content = ''
     },
   }
 
@@ -131,14 +183,43 @@ function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
     resolveExit()
   }
 
-  // Approval bridge: a dangerous tool pauses the turn; the next input line answers it.
+  // ── Command palette state ────────────────────────────────────────────────────
+  const commands = slashCommands(session)
+  let matches: SlashInfo[] = []
+  let sel = 0
+  const renderPalette = () => {
+    palette.content = matches
+      .map((c, i) => `${i === sel ? ' ❯ ' : '   '}${c.usage.padEnd(30)} ${c.desc}`)
+      .join('\n')
+  }
+  const clearPalette = () => {
+    matches = []
+    sel = 0
+    palette.content = ''
+  }
+  const updatePalette = (value: string) => {
+    const v = value.replace(/^\s+/, '')
+    // Only while typing the command name (before any space/args).
+    if (!v.startsWith('/') || /\s/.test(v)) return clearPalette()
+    const partial = v.slice(1).toLowerCase()
+    matches = commands.filter(c => c.name.startsWith(partial))
+    if (matches.length === 0) {
+      palette.content = `   no command matches /${partial}`
+      return
+    }
+    if (sel >= matches.length) sel = 0
+    renderPalette()
+  }
+  input.on(InputRenderableEvents.INPUT, (value: string) => updatePalette(value))
+
+  // ── Approval bridge: a dangerous tool pauses the turn; the next line answers ──
   let pending: { tool: string; resolve: (ok: boolean) => void } | null = null
   session.gate.setPrompter(
     (call, tool) =>
       new Promise<boolean>(resolve => {
         spin.stop()
         const s = summarize(call.args)
-        status.content = `⚠ approve ${tool.name}${s ? ` ${s}` : ''}  —  y / n / a(lways)`
+        statusLine.content = `⚠ approve ${tool.name}${s ? ` ${s}` : ''}  —  y / n / a(lways)`
         pending = { tool: tool.name, resolve }
       }),
   )
@@ -146,57 +227,7 @@ function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
   let busy = false
   let history: BrainMessage[] = []
 
-  input.on(InputRenderableEvents.ENTER, (value: string) => {
-    const text = value.trim()
-    input.value = ''
-
-    if (pending) {
-      const a = text.toLowerCase()
-      const p = pending
-      pending = null
-      let ok = false
-      if (a === 'a' || a === 'always') {
-        session.gate.allowForSession(p.tool)
-        ok = true
-      } else if (a === 'y' || a === 'yes') {
-        ok = true
-      }
-      status.content = ''
-      append(`approve ${p.tool} → ${ok ? 'yes' : 'no'}`, ok ? C.ok : C.dim)
-      if (ok) spin.start(`executing ${p.tool}…`)
-      p.resolve(ok)
-      return
-    }
-
-    if (!text || busy) return
-
-    // Slash commands run a capability directly (still through the approval gate).
-    if (text.startsWith('/')) {
-      append(`you › ${text}`, C.you)
-      busy = true
-      spin.start('working…')
-      void (async () => {
-        try {
-          const sr = await handleSlash(session, text)
-          spin.stop()
-          if (sr.exit) {
-            quit()
-            return
-          }
-          if (sr.output) {
-            append(sr.output, C.agent)
-            append('')
-          }
-        } catch (err) {
-          spin.stop()
-          append(`✗ ${(err as Error).message}`, C.err)
-        } finally {
-          busy = false
-        }
-      })()
-      return
-    }
-
+  const runChatTurn = (text: string) => {
     append(`you › ${text}`, C.you)
     busy = true
     spin.start('thinking…')
@@ -225,19 +256,82 @@ function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
       } catch (err) {
         spin.stop()
         const msg = (err as Error).message
-        const friendly = /abort|timeout/i.test(msg)
-          ? 'the agent took too long and was stopped — try again'
-          : msg
-        append(`✗ ${friendly}`, C.err)
+        append(
+          `✗ ${/abort|timeout/i.test(msg) ? 'took too long and was stopped — try again' : msg}`,
+          C.err,
+        )
       } finally {
         busy = false
       }
     })()
+  }
+
+  const runSlash = (text: string) => {
+    append(`you › ${text}`, C.you)
+    busy = true
+    spin.start('working…')
+    void (async () => {
+      try {
+        const sr = await handleSlash(session, text)
+        spin.stop()
+        if (sr.exit) return quit()
+        if (sr.output) {
+          append(sr.output, C.agent)
+          append('')
+        }
+      } catch (err) {
+        spin.stop()
+        append(`✗ ${(err as Error).message}`, C.err)
+      } finally {
+        busy = false
+      }
+    })()
+  }
+
+  input.on(InputRenderableEvents.ENTER, (value: string) => {
+    const text = value.trim()
+    input.value = ''
+    clearPalette()
+
+    if (pending) {
+      const a = text.toLowerCase()
+      const p = pending
+      pending = null
+      const ok = a === 'a' || a === 'always' || a === 'y' || a === 'yes'
+      if (a === 'a' || a === 'always') session.gate.allowForSession(p.tool)
+      statusLine.content = ''
+      append(`approve ${p.tool} → ${ok ? 'yes' : 'no'}`, ok ? C.ok : C.dim)
+      if (ok) spin.start(`executing ${p.tool}…`)
+      p.resolve(ok)
+      return
+    }
+
+    if (!text || busy) return
+    if (text.startsWith('/')) runSlash(text)
+    else runChatTurn(text)
   })
 
+  // ── Keys: Ctrl-C quits; ↑↓/Tab drive the palette while it's open ─────────────
   renderer.keyInput.on('keypress', (key: KeyEvent) => {
-    if (key.ctrl && key.name === 'c') quit()
+    if (key.ctrl && key.name === 'c') return quit()
+    if (matches.length === 0) return
+    if (key.name === 'up') {
+      sel = (sel - 1 + matches.length) % matches.length
+      renderPalette()
+    } else if (key.name === 'down') {
+      sel = (sel + 1) % matches.length
+      renderPalette()
+    } else if (key.name === 'tab') {
+      input.value = `/${matches[sel]!.name} `
+      clearPalette()
+    } else if (key.name === 'escape') {
+      clearPalette()
+    }
   })
 
   return exited
+}
+
+function short(addr: string): string {
+  return addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr
 }

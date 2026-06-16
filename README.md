@@ -215,8 +215,8 @@ revoke); gateway + Telegram surface (pairing, keyboard approvals); durable memor
 writes, activity log, encrypted export, compaction); x402 buyer/seller + recurring budgets. The
 on-chain caveat is the security floor — proven in `caveat-floor.test.ts`.
 
-The **1Shot mainnet relay + Base-mainnet registry** (the $1k prize requirement) are the one
-remaining opt-in step — testnet-baked and ready.
+The same relayer path runs on **Base mainnet** — `compass init` → Base points the 1Shot
+relayer and registries at mainnet; testnet is just the default for safe demos.
 
 ## License
 
