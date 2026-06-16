@@ -10,7 +10,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@compass_agents/core": "0.1.6"
+    "@compass_agents/core": "^0.1.6"
   },
   "devDependencies": {
     "zod": "^3.23.8"

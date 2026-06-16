@@ -10,8 +10,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@compass_agents/delegation": "0.1.6",
-    "@compass_agents/relayer-1shot": "0.1.6",
+    "@compass_agents/delegation": "^0.1.6",
+    "@compass_agents/relayer-1shot": "^0.1.6",
     "viem": "^2.31.4"
   },
   "publishConfig": {

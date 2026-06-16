@@ -41,7 +41,7 @@ import { runDemoSpine } from '../src/demo'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.13'
+const VERSION = '0.1.14'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -363,6 +363,19 @@ async function runChat() {
   const extraTools = [...makeWebTools(), ...(pk ? buildOnchainTools(config, pk) : [])]
 
   const session = createSession({ brain, memory, approvalsMode: config.approvals.mode, extraTools })
+
+  // Rich OpenTUI chat when attached to a real terminal; fall back to the readline
+  // REPL for COMPASS_NO_TUI=1, non-TTY pipes, or if the native renderer can't start.
+  const useTui = process.env.COMPASS_NO_TUI !== '1' && !!process.stdin.isTTY && !!process.stdout.isTTY
+  if (useTui) {
+    try {
+      const { runTui } = await import('../src/tui')
+      await runTui(session)
+      return
+    } catch (err) {
+      if (process.env.COMPASS_DEBUG) console.error('TUI unavailable, using basic chat:', err)
+    }
+  }
   await startRepl(session)
 }
 

@@ -10,10 +10,10 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@compass_agents/gateway": "0.1.6"
+    "@compass_agents/gateway": "^0.1.6"
   },
   "devDependencies": {
-    "@compass_agents/core": "0.1.6",
+    "@compass_agents/core": "^0.1.6",
     "zod": "^3.23.8"
   },
   "publishConfig": {
