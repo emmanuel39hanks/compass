@@ -143,18 +143,24 @@ helper agents, it can now **find** and **create**:
 | **Discover services** | `discover` | Searches the [x402 Bazaar](https://docs.cdp.coinbase.com/x402/bazaar) for payable datasets/APIs, then `pay` buys one from your budget — the agent sources data on its own. |
 | **Pay for data** | `pay` | Buys a paid (x402) resource from a *delegated* allowance — gasless via 1Shot. |
 | **Hire agents** | `a2a.hire` · `a2a.grant` | Redelegates a bounded, revocable budget to a specialist agent (ERC-7710). |
-| **Check reputation** | `a2a.reputation` | Reads a peer's on-chain [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) reputation before hiring it (Identity + Reputation + Validation registries). |
+| **Check reputation** | `a2a.reputation` | Reads a peer's on-chain [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) reputation before hiring it — **live on Base Sepolia** (Identity + Reputation + Validation registries deployed). |
 | **Create media** | `venice.image` · `venice.vision` · `venice.speak` | Generate images, analyze images, and text-to-speech via Venice — saved to `.compass/media/`. |
 | **Research** | `web.search` · `web.fetch` | Search the web and read pages. |
-| **Inherit any tool** | MCP | Connect [MCP](https://modelcontextprotocol.io) servers (filesystem, GitHub, databases, …) — their tools become the agent's. |
+| **Inherit any tool** | MCP (in) | Connect [MCP](https://modelcontextprotocol.io) servers (filesystem, GitHub, databases, …) — their tools become the agent's. |
+| **Be any client's tool** | MCP (out) | `compass-mcp` serves compass's own tools to any MCP client (Claude Desktop, Cursor, another agent). |
 
-Make it discoverable to other agents, and plug in MCP servers:
+Make it discoverable, plug in MCP servers, and expose compass *as* an MCP server:
 
 ```bash
 compass card                     # writes a standard A2A /.well-known/agent-card.json
-# .compass/mcp.json — add MCP servers (Claude-Desktop-style):
+
+# Use external MCP servers — .compass/mcp.json (Claude-Desktop-style):
 #   { "mcpServers": { "fs": { "command": "npx",
 #       "args": ["-y","@modelcontextprotocol/server-filesystem","/data"] } } }
+
+# Or run compass itself as an MCP server for other clients:
+compass-mcp                      # serves compass's tools over stdio
+#   Claude Desktop: { "mcpServers": { "compass": { "command": "compass-mcp" } } }
 ```
 
 The chat runs in a rich **OpenTUI** interface (live "thinking…" status, inline
@@ -188,10 +194,12 @@ compass/
 
 ## Status
 
-**Working end-to-end on Base Sepolia, milestones M0–M8.** 209 TS tests + 6
-Solidity tests pass; typecheck + lint clean. Live on-chain proofs (Base Sepolia):
+**Working end-to-end on Base Sepolia.** 240+ TS tests + 8 Solidity tests pass;
+typecheck + lint clean. Live on-chain proofs (Base Sepolia):
 
-- **Agent registry deployed** — [`0x5eDc156E…E650`](https://sepolia.basescan.org/address/0x5eDc156Ef946261D9c66ECC17218952D77BFE650), agent #1 "scout" minted.
+- **Agent identity registry** (ERC-8004) — [`0x5eDc156E…E650`](https://sepolia.basescan.org/address/0x5eDc156Ef946261D9c66ECC17218952D77BFE650), agent #1 "scout" minted.
+- **Reputation registry** (ERC-8004) — [`0xD3103471…845B`](https://sepolia.basescan.org/address/0xD3103471d8b8bc3baF577Db71b8D46b04418845B); agent #1 carries a real on-chain score (92, 1 client).
+- **Validation registry** (ERC-8004) — [`0xeF92251A…A1C9`](https://sepolia.basescan.org/address/0xeF92251A3F6FE59B6ba7118b51c321fCD79cA1C9).
 - **Gasless USDC relay** via 1Shot (gas in USDC, EOA upgraded via EIP-7702) — tx [`0xd30e7efe…`](https://sepolia.basescan.org/tx/0xd30e7efeeb71ecfc9335ebbc993275325fd414f8faa0b2cc0cbe23ce0b3f99cf).
 - **Agents hire agents** over a real, signed+encrypted network — two HTTP servers, owner seals a
   budget grant to the helper's pubkey, the helper redeems on-chain — tx [`0x9d770ab7…`](https://sepolia.basescan.org/tx/0x9d770ab7970303dbd2acc7992627e52d111f4fa2b0e495bf5e2f5e593a3e191c).

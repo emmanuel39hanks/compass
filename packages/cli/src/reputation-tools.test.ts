@@ -11,16 +11,20 @@ const config = (chainId: number): CompassConfig =>
     identity: { signerSource: 'privkey' },
   }) as unknown as CompassConfig
 
-test('a2a.reputation reports identity-only when no reputation registry is deployed', async () => {
-  // 84532 has an identity registry but no reputation registry → graceful fallback.
+test('a2a.reputation reads the on-chain score (registry live on Base Sepolia)', async () => {
+  // resolve → (agentId, owner); getSummary → (count, value, decimals).
   const client = {
-    readContract: async () => [42n, '0xabc0000000000000000000000000000000000001'] as const,
+    readContract: async (req: { functionName: string }) =>
+      req.functionName === 'resolve'
+        ? ([42n, '0xabc0000000000000000000000000000000000001'] as const)
+        : ([3n, 90n, 0] as const),
   } as unknown as PublicClient
   const [tool] = makeReputationTools(config(84532), { client })
   const r = await tool!.run({ agent: 'scout' }, ctx())
   expect(r.ok).toBe(true)
   expect(r.content).toContain('agent #42')
-  expect(r.content).toContain('identity only')
+  expect(r.content).toContain('score 90')
+  expect(r.content).toContain('3 client')
 })
 
 test('a2a.reputation reports a missing agent', async () => {

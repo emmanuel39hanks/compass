@@ -44,7 +44,7 @@ import { makeReputationTools } from '../src/reputation-tools'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.16'
+const VERSION = '0.1.17'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'

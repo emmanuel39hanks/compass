@@ -8,8 +8,12 @@ import type { Address, Hex, PublicClient, WalletClient } from 'viem'
  * Addresses are empty until the registries are deployed for a chain; the tools
  * fall back to identity-only and never throw on a missing registry.
  */
-export const REPUTATION_REGISTRY: Record<number, Address> = {}
-export const VALIDATION_REGISTRY: Record<number, Address> = {}
+export const REPUTATION_REGISTRY: Record<number, Address> = {
+  84532: '0xD3103471d8b8bc3baF577Db71b8D46b04418845B', // Base Sepolia
+}
+export const VALIDATION_REGISTRY: Record<number, Address> = {
+  84532: '0xeF92251A3F6FE59B6ba7118b51c321fCD79cA1C9', // Base Sepolia
+}
 
 const ZERO_HASH = `0x${'0'.repeat(64)}` as Hex
 

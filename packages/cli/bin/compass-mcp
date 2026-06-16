@@ -1,0 +1,67 @@
+#!/usr/bin/env bun
+/**
+ * compass-mcp — expose compass's tools as an MCP server (stdio), so any MCP client
+ * (Claude Desktop, Cursor, another agent) can use compass to send USDC, hire
+ * agents, pay x402 paywalls, discover services, and check on-chain reputation.
+ *
+ * Claude-Desktop-style config:
+ *   { "mcpServers": { "compass": { "command": "compass-mcp" } } }
+ * Run it from a directory that has a compass.config.json (see `compass init`).
+ */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { makeVeniceMediaTools } from '@compass_agents/brain-venice'
+import { ApprovalGate, MemoryStore, ToolRegistry, parseConfig } from '@compass_agents/core'
+import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { buildOnchainTools } from '../src/agent-tools'
+import { makeDiscoveryTools } from '../src/discovery-tools'
+import { mcpCall, mcpToolList } from '../src/mcp-server'
+import { makeReputationTools } from '../src/reputation-tools'
+import { makeWebTools } from '../src/web-tools'
+
+const CONFIG_PATH = 'compass.config.json'
+
+function saveMedia(name, bytes) {
+  mkdirSync('.compass/media', { recursive: true })
+  const path = `.compass/media/${name}`
+  writeFileSync(path, bytes)
+  return path
+}
+
+async function main() {
+  if (!existsSync(CONFIG_PATH)) {
+    console.error('compass-mcp: run `compass init` first (no compass.config.json here).')
+    process.exit(1)
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  const apiKey = process.env.VENICE_API_KEY
+  const pk = process.env.COMPASS_PRIVATE_KEY
+
+  const tools = new ToolRegistry()
+  for (const t of makeWebTools()) tools.register(t)
+  const discoveryUrl = process.env.X402_DISCOVERY_URL
+  for (const t of makeDiscoveryTools(discoveryUrl ? { url: discoveryUrl } : {})) tools.register(t)
+  for (const t of makeReputationTools(config)) tools.register(t)
+  if (apiKey) for (const t of makeVeniceMediaTools({ apiKey, save: saveMedia })) tools.register(t)
+  if (pk) for (const t of buildOnchainTools(config, pk)) tools.register(t)
+
+  const ctx = { memory: new MemoryStore('.compass/memory') }
+  // The MCP host shows the user each tool call for approval, so run them directly.
+  const gate = new ApprovalGate({ mode: 'off' })
+
+  const server = new Server({ name: 'compass', version: '0.1.0' }, { capabilities: { tools: {} } })
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: mcpToolList(tools) }))
+  server.setRequestHandler(CallToolRequestSchema, async req =>
+    mcpCall(tools, ctx, gate, req.params.name, req.params.arguments ?? {}),
+  )
+
+  await server.connect(new StdioServerTransport())
+  // stdout is the MCP protocol channel — log only to stderr.
+  console.error(`compass MCP server ready — ${tools.list().length} tools over stdio`)
+}
+
+main().catch(err => {
+  console.error(err)
+  process.exit(1)
+})

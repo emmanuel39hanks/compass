@@ -1,11 +1,12 @@
 {
   "name": "@compass_agents/cli",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "type": "module",
   "description": "Compass CLI/TUI: compass init / chat / delegate / redelegate / revoke / status, with a live 1Shot webhook tx feed.",
   "license": "MIT",
   "bin": {
-    "compass": "./bin/compass"
+    "compass": "./bin/compass",
+    "compass-mcp": "./bin/compass-mcp"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -26,7 +27,7 @@
     "zod": "^3.23.8"
   },
   "optionalDependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": ">=1.13.0 <1.18.0",
     "@opentui/core": "^0.4.1"
   },
   "publishConfig": {
