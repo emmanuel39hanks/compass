@@ -49,8 +49,9 @@ export interface GrantedPermission {
  * approving. The recurring cap is bounded by `periodAmount`/`periodDuration`.
  *
  * Note: `signer`/`token`/`startTime` are the older `grantPermissions` shape and a
- * top-level `expiry` is likewise rejected by this method — MetaMask returns
- * "Invalid params … expiry — Expected a value of type `never`" if any are present.
+ * top-level `expiry` is likewise rejected by this method ("expiry — Expected a value
+ * of type `never`"). `rules` IS required at the top level (an array of extra
+ * constraints — empty when there are none), or MetaMask returns "0.rules: Required".
  */
 export function buildPermissionsRequest(opts: {
   chainId: number
@@ -73,6 +74,7 @@ export function buildPermissionsRequest(opts: {
         },
         isAdjustmentAllowed: true,
       },
+      rules: [],
     },
   ]
 }
@@ -264,7 +266,8 @@ function buildRequest(){
         justification: 'compass agent spending budget'
       },
       isAdjustmentAllowed: true
-    }
+    },
+    rules: []
   }];
 }
 function flask(){

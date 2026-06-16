@@ -24,6 +24,7 @@ test('buildPermissionsRequest produces a valid ERC-7715 erc20-token-periodic req
   expect(p.to).toBe(GRANTEE) // grantee = the agent (session account), not `signer`
   expect(p).not.toHaveProperty('expiry') // this method rejects a top-level expiry
   expect(p).not.toHaveProperty('signer')
+  expect(p.rules).toEqual([]) // required top-level array ("0.rules: Required" otherwise)
   expect(p.permission.type).toBe('erc20-token-periodic')
   expect(p.permission.isAdjustmentAllowed).toBe(true) // user can tweak the cap before approving
   expect(p.permission.data.tokenAddress).toBe(USDC) // `tokenAddress`, not `token`
