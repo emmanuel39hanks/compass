@@ -18,6 +18,7 @@ export * from './revoke'
 export * from './account'
 export * from './budget'
 export * from './identity'
+export * from './reputation'
 
 // SDK essentials re-exported so consumers depend only on @compass_agents/delegation.
 export {

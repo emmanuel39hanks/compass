@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/core",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "description": "Chain-agnostic agent harness: Brain interface, tool registry, events/runtime loop, approval gates, local memory, config.",
   "license": "MIT",

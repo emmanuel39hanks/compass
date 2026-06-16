@@ -39,10 +39,12 @@ import { makeWebTools } from '../src/web-tools'
 import { helpText, isKnownCommand, parseArgv } from '../src/commands'
 import { runDemoSpine } from '../src/demo'
 import { makeDiscoveryTools } from '../src/discovery-tools'
+import { loadMcpTools } from '../src/mcp'
+import { makeReputationTools } from '../src/reputation-tools'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.15'
+const VERSION = '0.1.16'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -361,7 +363,12 @@ async function runChat() {
 
   // Wire on-chain capabilities when an operator key is present.
   const pk = process.env.COMPASS_PRIVATE_KEY
-  const extraTools = [...keylessTools(apiKey), ...(pk ? buildOnchainTools(config, pk) : [])]
+  const extraTools = [
+    ...keylessTools(apiKey),
+    ...makeReputationTools(config),
+    ...(await loadMcp()),
+    ...(pk ? buildOnchainTools(config, pk) : []),
+  ]
 
   const session = createSession({ brain, memory, approvalsMode: config.approvals.mode, extraTools })
 
@@ -398,11 +405,33 @@ function keylessTools(apiKey) {
   ]
 }
 
-/** Build the gateway's ToolRegistry: memory + keyless + on-chain (when keyed). */
+/** Read configured MCP servers from .compass/mcp.json (Claude-Desktop-style). */
+function readMcpServers() {
+  const path = '.compass/mcp.json'
+  if (!existsSync(path)) return {}
+  try {
+    const j = JSON.parse(readFileSync(path, 'utf8'))
+    return j.mcpServers ?? j.servers ?? j ?? {}
+  } catch {
+    return {}
+  }
+}
+
+/** Connect to any configured MCP servers and adapt their tools (skips failures). */
+async function loadMcp() {
+  const servers = readMcpServers()
+  if (!Object.keys(servers).length) return []
+  return loadMcpTools(servers, {
+    onError: (name, err) => console.error(`mcp: "${name}" unavailable — ${err?.message ?? err}`),
+  })
+}
+
+/** Build the gateway's ToolRegistry: memory + keyless + reputation + on-chain (when keyed). */
 function buildGatewayTools(config, pk, apiKey) {
   const tools = new ToolRegistry()
   for (const tool of makeMemoryTools()) tools.register(tool)
   for (const tool of keylessTools(apiKey)) tools.register(tool)
+  for (const tool of makeReputationTools(config)) tools.register(tool)
   if (pk) for (const tool of buildOnchainTools(config, pk)) tools.register(tool)
   return tools
 }
@@ -423,9 +452,11 @@ async function runServe() {
   const brain = new VeniceBrain({ apiKey, model: config.brain.model })
   const memory = new MemoryStore('.compass/memory')
   const pairing = new PairingStore({ path: '.compass/pairing.json' })
+  const gwTools = buildGatewayTools(config, pk, apiKey)
+  for (const tool of await loadMcp()) gwTools.register(tool)
   const gateway = new Gateway({
     brain,
-    tools: buildGatewayTools(config, pk, apiKey),
+    tools: gwTools,
     memory,
     system: COMPASS_SYSTEM,
     approvalsMode: config.approvals.mode,

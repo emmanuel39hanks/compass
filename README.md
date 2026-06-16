@@ -133,6 +133,33 @@ bot token; after that `compass serve` brings it online. To keep it always-on (lo
 like Hostinger / EC2 / a droplet, Docker, or Railway), see **[DEPLOY.md](./DEPLOY.md)** —
 each option is a copy-paste block.
 
+## What your agent can do
+
+Talk to it in plain English (terminal or Telegram). Beyond sending USDC and hiring
+helper agents, it can now **find** and **create**:
+
+| Capability | Tools | What it does |
+|---|---|---|
+| **Discover services** | `discover` | Searches the [x402 Bazaar](https://docs.cdp.coinbase.com/x402/bazaar) for payable datasets/APIs, then `pay` buys one from your budget — the agent sources data on its own. |
+| **Pay for data** | `pay` | Buys a paid (x402) resource from a *delegated* allowance — gasless via 1Shot. |
+| **Hire agents** | `a2a.hire` · `a2a.grant` | Redelegates a bounded, revocable budget to a specialist agent (ERC-7710). |
+| **Check reputation** | `a2a.reputation` | Reads a peer's on-chain [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004) reputation before hiring it (Identity + Reputation + Validation registries). |
+| **Create media** | `venice.image` · `venice.vision` · `venice.speak` | Generate images, analyze images, and text-to-speech via Venice — saved to `.compass/media/`. |
+| **Research** | `web.search` · `web.fetch` | Search the web and read pages. |
+| **Inherit any tool** | MCP | Connect [MCP](https://modelcontextprotocol.io) servers (filesystem, GitHub, databases, …) — their tools become the agent's. |
+
+Make it discoverable to other agents, and plug in MCP servers:
+
+```bash
+compass card                     # writes a standard A2A /.well-known/agent-card.json
+# .compass/mcp.json — add MCP servers (Claude-Desktop-style):
+#   { "mcpServers": { "fs": { "command": "npx",
+#       "args": ["-y","@modelcontextprotocol/server-filesystem","/data"] } } }
+```
+
+The chat runs in a rich **OpenTUI** interface (live "thinking…" status, inline
+approvals) and falls back to a plain readline prompt if the terminal can't host it.
+
 ### Develop
 
 ```bash

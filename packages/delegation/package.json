@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/delegation",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "MetaMask Smart Accounts Kit wrapper: smart accounts, ERC-7710 delegation/redelegation, caveat builders, redeemDelegations.",
   "license": "MIT",

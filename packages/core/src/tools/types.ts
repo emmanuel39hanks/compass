@@ -35,6 +35,13 @@ export interface ToolDef<A = unknown> {
   description: string
   /** zod validator; doubles as the source for the advertised JSON schema. */
   schema: z.ZodType<A>
+  /**
+   * Advertise this exact JSON Schema to the brain instead of deriving it from
+   * `schema`. For tools whose schema is already JSON Schema (e.g. MCP tools),
+   * so the brain sees the real input shape while `schema` stays a permissive
+   * validator.
+   */
+  parametersOverride?: Record<string, unknown>
   /** Marks the tool as requiring approval in `prompt` mode. */
   dangerous?: boolean
   run(args: A, ctx: ToolContext): Promise<ToolResult> | ToolResult

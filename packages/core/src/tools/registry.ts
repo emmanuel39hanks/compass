@@ -23,12 +23,14 @@ export class ToolRegistry {
     return [...this.tools.values()]
   }
 
-  /** OpenAI-style tool advertisements derived from each tool's zod schema. */
+  /** OpenAI-style tool advertisements — a tool's `parametersOverride`, else its zod schema. */
   schemas(): ToolSchema[] {
     return this.list().map(t => ({
       name: t.name,
       description: t.description,
-      parameters: zodToJsonSchema(t.schema, { target: 'openApi3' }) as Record<string, unknown>,
+      parameters:
+        t.parametersOverride ??
+        (zodToJsonSchema(t.schema, { target: 'openApi3' }) as Record<string, unknown>),
     }))
   }
 
