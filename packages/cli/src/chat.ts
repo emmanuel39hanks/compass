@@ -13,6 +13,7 @@ import {
   scanForThreats,
 } from '@compass_agents/core'
 import { z } from 'zod'
+import { handleSlash } from './slash'
 
 export const COMPASS_SYSTEM =
   "You are compass — the user's personal on-chain agent. You act on their behalf " +
@@ -21,6 +22,35 @@ export const COMPASS_SYSTEM =
   "didn't. If a task would exceed the user's limits, say so plainly."
 
 const DEFAULT_SYSTEM = COMPASS_SYSTEM
+
+export interface ChainContext {
+  network: string
+  chainId: number
+  account?: string
+  budget?: string
+  hasGrant?: boolean
+}
+
+/** COMPASS_SYSTEM plus the agent's live chain context, so it reasons chain-aware. */
+export function chainAwareSystem(c: ChainContext): string {
+  const lines = [
+    COMPASS_SYSTEM,
+    '',
+    `You operate on ${c.network} (chainId ${c.chainId}). USDC balances and transfers are on this network only — when asked about your balance, funds, or which chain you're on, name the network.`,
+  ]
+  if (c.account) lines.push(`Your agent wallet is ${c.account}.`)
+  if (c.budget) lines.push(`Your spending budget is ${c.budget}.`)
+  if (c.hasGrant) {
+    lines.push(
+      'A MetaMask budget has been granted to you (ERC-7715) — you can spend up to it gaslessly via the 1Shot relayer, even if the agent wallet holds no USDC of its own.',
+    )
+  } else if (c.account) {
+    lines.push(
+      `If the wallet shows 0 USDC, the user can fund ${c.account} on ${c.network} (faucet.circle.com on testnet), or grant a budget with \`compass connect\`.`,
+    )
+  }
+  return lines.join('\n')
+}
 
 /** Built-in memory tools so the agent can remember/recall across the session. */
 export function makeMemoryTools(): ToolDef[] {
@@ -175,7 +205,7 @@ export async function startRepl(session: ChatSession): Promise<void> {
   })
 
   let history: BrainMessage[] = []
-  console.log('compass · chat — tell your agent a goal in plain English. /exit to quit.\n')
+  console.log('compass · chat — plain English, or /help for shortcuts. /exit to quit.\n')
   for (;;) {
     let text: string
     try {
@@ -184,7 +214,21 @@ export async function startRepl(session: ChatSession): Promise<void> {
       break // stdin closed (EOF / Ctrl-D)
     }
     if (!text) continue
-    if (text === '/exit' || text === '/quit') break
+
+    // Slash commands run a capability directly (still through the approval gate).
+    if (text.startsWith('/')) {
+      spin.start('working…')
+      try {
+        const sr = await handleSlash(session, text)
+        spin.stop()
+        if (sr.exit) break
+        if (sr.output) console.log(`\n${sr.output}\n`)
+      } catch (err) {
+        spin.stop()
+        console.error(`\x1b[31m✗\x1b[0m ${(err as Error).message}\n`)
+      }
+      continue
+    }
 
     spin.start('thinking…')
     try {

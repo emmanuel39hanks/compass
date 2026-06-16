@@ -149,6 +149,11 @@ helper agents, it can now **find** and **create**:
 | **Inherit any tool** | MCP (in) | Connect [MCP](https://modelcontextprotocol.io) servers (filesystem, GitHub, databases, …) — their tools become the agent's. |
 | **Be any client's tool** | MCP (out) | `compass-mcp` serves compass's own tools to any MCP client (Claude Desktop, Cursor, another agent). |
 
+Reach any capability by name with a **slash command** (`/discover`, `/send`,
+`/reputation`, `/image`, … — `/help` lists them), or just ask in plain English.
+The agent is **chain-aware** — it knows its network and reports balances as
+"0 USDC on Base Sepolia · wallet 0x…".
+
 Make it discoverable, plug in MCP servers, and expose compass *as* an MCP server:
 
 ```bash

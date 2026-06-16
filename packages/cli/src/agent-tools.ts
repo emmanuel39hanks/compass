@@ -37,6 +37,19 @@ function readGrant(chainId: number): { permissionsContext: Hex } | null {
   return null
 }
 
+/** The human budget string of a MetaMask grant for this chain, if any. */
+function grantBudgetString(chainId: number): string | undefined {
+  if (!existsSync(GRANT_PATH)) return undefined
+  try {
+    const g = JSON.parse(readFileSync(GRANT_PATH, 'utf8'))
+    if (g.chainId === chainId && g.budget)
+      return `${g.budget.amount} ${g.budget.token}/${g.budget.period}`
+  } catch {
+    /* ignore */
+  }
+  return undefined
+}
+
 /**
  * The agent's on-chain tool surface (balance, send, hire), wired to the live
  * relayer. Shared by the chat REPL and the gateway so both drive the same
@@ -55,9 +68,12 @@ export function buildOnchainTools(config: CompassConfig, pk: Hex): ToolDef[] {
   const helperKey = keccak256(concatHex([pk, stringToHex('compass-helper-v1')]))
   const helperAccount = privateKeyToAccount(helperKey).address
 
+  const grantedBudget = grantBudgetString(chainId)
   const tools: ToolDef[] = [
     ...makeOnchainTools({
       account,
+      ...(config.network.name ? { network: config.network.name } : {}),
+      ...(grantedBudget ? { grantedBudget } : {}),
       readUsdcBalance: () => readErc20Balance({ chainId, rpcUrl, token, account }),
       sendUsdc: (to, amount) => {
         // Prefer a MetaMask ERC-7715 grant (from `compass connect`) when present —

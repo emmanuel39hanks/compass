@@ -55,8 +55,19 @@ you › hire a helper to pay 0x1234… 0.05 USDC
 you › draw a flat compass logo                           # Venice image → .compass/media
 ```
 
+Prefer shortcuts? **Slash commands** reach a capability directly (still gated):
+
+```
+/balance                       /discover [query]        /reputation <agent>
+/send <amount> <address>       /pay <url>               /image <prompt>
+/hire <amount> <address>       /search <query>          /say <text>
+/help                          /exit
+```
+
 Anything that spends asks for approval, and the agent can **never exceed your
-budget** — that limit is an on-chain caveat, not a setting it can ignore.
+budget** — that limit is an on-chain caveat, not a setting it can ignore. The
+agent is **chain-aware**: it knows its network and reports balances as
+"0 USDC on Base Sepolia · wallet 0x…" so you always know which chain you're on.
 
 ## 4. Connect MetaMask (optional, non-custodial)
 

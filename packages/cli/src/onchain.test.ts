@@ -4,14 +4,29 @@ import { makeOnchainTools } from './onchain'
 
 const ACCT = '0x1111111111111111111111111111111111111111' as const
 
-test('chain.balance formats USDC', async () => {
+test('chain.balance reports USDC + network + wallet (chain-aware)', async () => {
   const balance = makeOnchainTools({
     account: ACCT,
+    network: 'Base Sepolia',
     readUsdcBalance: () => Promise.resolve(1_500_000n),
     sendUsdc: () => Promise.resolve({ taskId: '0x', status: 200 }),
   })[0]!
   const r = await balance.run({}, {} as ToolContext)
-  expect(r.content).toBe('1.5 USDC')
+  expect(r.content).toContain('1.5 USDC')
+  expect(r.content).toContain('on Base Sepolia')
+  expect(r.content).toContain(ACCT)
+})
+
+test('chain.balance shows a granted MetaMask budget when present', async () => {
+  const balance = makeOnchainTools({
+    account: ACCT,
+    network: 'Base Sepolia',
+    grantedBudget: '25 USDC/week',
+    readUsdcBalance: () => Promise.resolve(0n),
+    sendUsdc: () => Promise.resolve({ taskId: '0x', status: 200 }),
+  })[0]!
+  const r = await balance.run({}, {} as ToolContext)
+  expect(r.content).toContain('MetaMask budget: 25 USDC/week')
 })
 
 test('chain.send reports the relay result', async () => {

@@ -10,6 +10,7 @@ import {
   createCliRenderer,
 } from '@opentui/core'
 import type { ChatSession } from './chat'
+import { handleSlash } from './slash'
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 const TURN_TIMEOUT_MS = 120_000
@@ -168,8 +169,31 @@ function drive(renderer: CliRenderer, session: ChatSession): Promise<void> {
     }
 
     if (!text || busy) return
-    if (text === '/exit' || text === '/quit') {
-      quit()
+
+    // Slash commands run a capability directly (still through the approval gate).
+    if (text.startsWith('/')) {
+      append(`you › ${text}`, C.you)
+      busy = true
+      spin.start('working…')
+      void (async () => {
+        try {
+          const sr = await handleSlash(session, text)
+          spin.stop()
+          if (sr.exit) {
+            quit()
+            return
+          }
+          if (sr.output) {
+            append(sr.output, C.agent)
+            append('')
+          }
+        } catch (err) {
+          spin.stop()
+          append(`✗ ${(err as Error).message}`, C.err)
+        } finally {
+          busy = false
+        }
+      })()
       return
     }
 

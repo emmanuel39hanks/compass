@@ -8,6 +8,10 @@ import { z } from 'zod'
  */
 export interface OnchainDeps {
   account: Address
+  /** Human network name for chain-aware replies (e.g. "Base Sepolia"). */
+  network?: string
+  /** A MetaMask-granted spending budget, if one is active (e.g. "25 USDC/week"). */
+  grantedBudget?: string
   /** USDC balance of the account, in base units. */
   readUsdcBalance: () => Promise<bigint>
   /** Send USDC on-chain (gasless via 1Shot, within budget). */
@@ -23,12 +27,15 @@ export function makeOnchainTools(deps: OnchainDeps): ToolDef[] {
 
   const balance: ToolDef<Record<string, never>> = {
     name: 'chain.balance',
-    description: "Check the agent's USDC balance.",
+    description:
+      "Check the agent's USDC balance — reports the network and wallet, so you know which chain it's on.",
     schema: z.object({}),
-    run: async () => ({
-      content: `${formatUnits(await deps.readUsdcBalance(), decimals)} USDC`,
-      ok: true,
-    }),
+    run: async () => {
+      const usdc = formatUnits(await deps.readUsdcBalance(), decimals)
+      const where = deps.network ? ` on ${deps.network}` : ''
+      const grant = deps.grantedBudget ? ` · MetaMask budget: ${deps.grantedBudget}` : ''
+      return { content: `${usdc} USDC${where} · wallet ${deps.account}${grant}`, ok: true }
+    },
   }
 
   const send: ToolDef<{ to: string; amount: string }> = {

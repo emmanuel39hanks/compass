@@ -33,7 +33,7 @@ import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { base, baseSepolia } from 'viem/chains'
 import { X402Facilitator } from '@compass_agents/x402'
 import { buildOnchainTools } from '../src/agent-tools'
-import { COMPASS_SYSTEM, createSession, makeMemoryTools, startRepl } from '../src/chat'
+import { chainAwareSystem, createSession, makeMemoryTools, startRepl } from '../src/chat'
 import { runConnect } from '../src/connect'
 import { makeWebTools } from '../src/web-tools'
 import { helpText, isKnownCommand, parseArgv } from '../src/commands'
@@ -44,7 +44,7 @@ import { makeReputationTools } from '../src/reputation-tools'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.18'
+const VERSION = '0.1.19'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -370,7 +370,13 @@ async function runChat() {
     ...(pk ? buildOnchainTools(config, pk) : []),
   ]
 
-  const session = createSession({ brain, memory, approvalsMode: config.approvals.mode, extraTools })
+  const session = createSession({
+    brain,
+    memory,
+    approvalsMode: config.approvals.mode,
+    extraTools,
+    system: systemFor(config, pk),
+  })
 
   // Rich OpenTUI chat when attached to a real terminal; fall back to the readline
   // REPL for COMPASS_NO_TUI=1, non-TTY pipes, or if the native renderer can't start.
@@ -436,6 +442,19 @@ function buildGatewayTools(config, pk, apiKey) {
   return tools
 }
 
+/** The system prompt with this agent's live chain context (network, wallet, budget, grant). */
+function systemFor(config, pk) {
+  return chainAwareSystem({
+    network: config.network.name ?? `chain ${config.network.chainId}`,
+    chainId: config.network.chainId,
+    ...(pk ? { account: privateKeyToAccount(pk).address } : {}),
+    ...(config.budget
+      ? { budget: `${config.budget.amount} ${config.budget.token}/${config.budget.period}` }
+      : {}),
+    hasGrant: existsSync('.compass/permission.json'),
+  })
+}
+
 /** `compass serve` — run the agent as a long-lived gateway (Telegram + A2A). */
 async function runServe() {
   if (!existsSync(CONFIG_PATH)) {
@@ -458,7 +477,7 @@ async function runServe() {
     brain,
     tools: gwTools,
     memory,
-    system: COMPASS_SYSTEM,
+    system: systemFor(config, pk),
     approvalsMode: config.approvals.mode,
     pairing,
     activity: new ActivityLog('.compass/activity.jsonl'),
