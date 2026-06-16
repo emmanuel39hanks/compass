@@ -36,13 +36,15 @@ export function chainAwareSystem(c: ChainContext): string {
   const lines = [
     COMPASS_SYSTEM,
     '',
-    `You operate on ${c.network} (chainId ${c.chainId}). USDC balances and transfers are on this network only — when asked about your balance, funds, or which chain you're on, name the network.`,
+    `You operate on ${c.network} (chainId ${c.chainId}). Everything you read or do is on THIS network only — name it when asked about balance, funds, or which chain you're on.`,
+    'For any balance/funds question, CALL YOUR TOOLS — never guess: `chain.balance` reports USDC and ETH (gas); `chain.token <contract address>` reports ANY other ERC-20 (EURC, DAI, …).',
+    'Report ONLY what a tool returns. NEVER claim funds are "likely on Ethereum Sepolia" or on any other chain/token you cannot query. Do not refuse to check ETH or a token on your own network — just call the tool. If something is genuinely on another chain, say plainly you can only read this one and suggest the user check their wallet.',
   ]
-  if (c.account) lines.push(`Your agent wallet is ${c.account}.`)
+  if (c.account) lines.push(`Your agent session wallet is ${c.account}.`)
   if (c.budget) lines.push(`Your spending budget is ${c.budget}.`)
   if (c.hasGrant) {
     lines.push(
-      'A MetaMask budget has been granted to you (ERC-7715) — you can spend up to it gaslessly via the 1Shot relayer, even if the agent wallet holds no USDC of its own.',
+      'A MetaMask budget has been granted to you (ERC-7715). Your spendable funds live in the GRANTING MetaMask account (not the session wallet) — `chain.balance` reads that account. You spend up to the budget gaslessly via the 1Shot relayer, no ETH needed.',
     )
   } else if (c.account) {
     lines.push(

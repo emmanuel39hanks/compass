@@ -1,5 +1,5 @@
 import type { ToolDef } from '@compass_agents/core'
-import { type Address, formatUnits, getAddress, parseUnits } from 'viem'
+import { type Address, formatEther, formatUnits, getAddress, parseUnits } from 'viem'
 import { z } from 'zod'
 
 /**
@@ -10,10 +10,16 @@ export interface OnchainDeps {
   account: Address
   /** Human network name for chain-aware replies (e.g. "Base Sepolia"). */
   network?: string
+  /** When a MetaMask budget is granted, the account it's granted FROM (the spendable source). */
+  grantedFrom?: Address
   /** A MetaMask-granted spending budget, if one is active (e.g. "25 USDC/week"). */
   grantedBudget?: string
-  /** USDC balance of the account, in base units. */
+  /** USDC balance of the spendable account, in base units. */
   readUsdcBalance: () => Promise<bigint>
+  /** Native ETH balance of the same account (gas indicator). */
+  readEthBalance?: () => Promise<bigint>
+  /** Read any ERC-20 (symbol, decimals, balance) for the spendable account. */
+  readToken?: (token: Address) => Promise<{ symbol: string; decimals: number; balance: bigint }>
   /** Send USDC on-chain (gasless via 1Shot, within budget). */
   sendUsdc: (
     to: Address,
@@ -28,13 +34,25 @@ export function makeOnchainTools(deps: OnchainDeps): ToolDef[] {
   const balance: ToolDef<Record<string, never>> = {
     name: 'chain.balance',
     description:
-      "Check the agent's USDC balance — reports the network and wallet, so you know which chain it's on.",
+      "Check USDC (and ETH-for-gas) on the agent's network. With a MetaMask grant, reports the " +
+      "granting wallet's balance — the spendable source — and the budget. States the network so you know which chain.",
     schema: z.object({}),
     run: async () => {
       const usdc = formatUnits(await deps.readUsdcBalance(), decimals)
       const where = deps.network ? ` on ${deps.network}` : ''
-      const grant = deps.grantedBudget ? ` · MetaMask budget: ${deps.grantedBudget}` : ''
-      return { content: `${usdc} USDC${where} · wallet ${deps.account}${grant}`, ok: true }
+      const eth = deps.readEthBalance
+        ? `, ${formatEther(await deps.readEthBalance())} ETH (gas)`
+        : ''
+      if (deps.grantedFrom) {
+        const b = deps.grantedBudget
+          ? ` · budget ${deps.grantedBudget}, spendable gaslessly via 1Shot`
+          : ''
+        return {
+          content: `MetaMask ${deps.grantedFrom}${where}: ${usdc} USDC${eth}${b}`,
+          ok: true,
+        }
+      }
+      return { content: `${usdc} USDC${eth}${where} · wallet ${deps.account}`, ok: true }
     },
   }
 
@@ -62,5 +80,28 @@ export function makeOnchainTools(deps: OnchainDeps): ToolDef[] {
     },
   }
 
-  return [balance, send]
+  const tokenBalance: ToolDef<{ token: string }> = {
+    name: 'chain.token',
+    description:
+      "Check the balance of ANY ERC-20 token by its contract address on the agent's network " +
+      '(e.g. EURC, DAI, or any token) — not just USDC.',
+    schema: z.object({
+      token: z
+        .string()
+        .regex(/^0x[0-9a-fA-F]{40}$/)
+        .describe('the ERC-20 token contract address'),
+    }),
+    run: async args => {
+      if (!deps.readToken) return { content: 'token reads are not available here', ok: false }
+      const t = getAddress(args.token.toLowerCase())
+      const { symbol, decimals: d, balance: bal } = await deps.readToken(t)
+      const who = deps.grantedFrom ?? deps.account
+      return {
+        content: `${formatUnits(bal, d)} ${symbol}${deps.network ? ` on ${deps.network}` : ''} · wallet ${who}`,
+        ok: true,
+      }
+    },
+  }
+
+  return [balance, send, tokenBalance]
 }

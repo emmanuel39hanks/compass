@@ -30,8 +30,17 @@ export const SLASH: Record<string, SlashSpec> = {
   balance: {
     tool: 'chain.balance',
     usage: '/balance',
-    desc: 'your USDC balance + network',
+    desc: 'USDC + ETH balance + network',
     parse: () => ({}),
+  },
+  token: {
+    tool: 'chain.token',
+    usage: '/token <address>',
+    desc: 'any ERC-20 balance',
+    parse: r =>
+      /^0x[0-9a-fA-F]{40}$/.test(r.trim())
+        ? { token: r.trim() }
+        : 'usage: /token <0x… contract address>',
   },
   send: {
     tool: 'chain.send',

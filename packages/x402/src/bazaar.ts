@@ -77,13 +77,46 @@ export function normalizeDiscovery(json: unknown): X402Service[] {
   return out
 }
 
-/** Apply a keyword filter + limit to a normalized service list. */
+const STOPWORDS = new Set([
+  'the',
+  'a',
+  'an',
+  'that',
+  'has',
+  'have',
+  'for',
+  'and',
+  'with',
+  'of',
+  'to',
+  'my',
+  'me',
+  'is',
+  'are',
+  'can',
+  'you',
+  'please',
+  'some',
+  'any',
+  'find',
+  'get',
+])
+
+/**
+ * Keyword filter + limit. A natural-language query ("an agent that has sports
+ * data") would never substring-match a service description, so match on any
+ * meaningful term instead of the whole phrase.
+ */
 export function filterServices(services: X402Service[], query?: string, limit = 20): X402Service[] {
-  const q = query?.trim().toLowerCase()
-  const matched = q
-    ? services.filter(
-        s => s.description.toLowerCase().includes(q) || s.resource.toLowerCase().includes(q),
-      )
+  const terms = (query ?? '')
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+    ?.filter(t => t.length > 2 && !STOPWORDS.has(t))
+  const matched = terms?.length
+    ? services.filter(s => {
+        const hay = `${s.description} ${s.resource}`.toLowerCase()
+        return terms.some(t => hay.includes(t))
+      })
     : services
   return matched.slice(0, limit)
 }

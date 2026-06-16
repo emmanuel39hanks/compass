@@ -1,5 +1,5 @@
 import type { ToolDef } from '@compass_agents/core'
-import { discoverX402Services } from '@compass_agents/x402'
+import { type X402Service, discoverX402Services, filterServices } from '@compass_agents/x402'
 import { z } from 'zod'
 
 export interface DiscoveryToolOpts {
@@ -28,18 +28,26 @@ export function makeDiscoveryTools(opts: DiscoveryToolOpts = {}): ToolDef[] {
     }),
     run: async args => {
       try {
-        const services = await discoverX402Services({
+        // Fetch the whole catalog, then keyword-filter locally — so a natural-language
+        // query still matches, and we can fall back to showing the catalog.
+        const all = await discoverX402Services({
           ...(opts.url ? { url: opts.url } : {}),
           ...(opts.headers ? { headers: opts.headers } : {}),
           ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-          ...(args.query ? { query: args.query } : {}),
-          ...(args.limit ? { limit: args.limit } : {}),
         })
-        if (services.length === 0) return { content: 'no matching x402 services found', ok: true }
-        const lines = services.map(
-          s => `• ${s.resource} — ${s.description} (${s.price}, ${s.network})`,
-        )
-        return { content: `found ${services.length}:\n${lines.join('\n')}`, ok: true }
+        if (all.length === 0) {
+          return { content: 'the x402 Bazaar returned no listings right now', ok: true }
+        }
+        const limit = args.limit ?? 12
+        const fmt = (list: X402Service[]) =>
+          list.map(s => `• ${s.resource} — ${s.description} (${s.price}, ${s.network})`).join('\n')
+        const matched = filterServices(all, args.query, limit)
+        if (matched.length > 0)
+          return { content: `found ${matched.length}:\n${fmt(matched)}`, ok: true }
+        return {
+          content: `no Bazaar service matches "${args.query ?? ''}". The Bazaar lists ${all.length} — showing some:\n${fmt(all.slice(0, limit))}`,
+          ok: true,
+        }
       } catch (err) {
         return { content: `discovery unavailable: ${(err as Error).message}`, ok: false }
       }

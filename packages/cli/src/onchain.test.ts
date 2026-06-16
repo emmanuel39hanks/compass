@@ -17,16 +17,39 @@ test('chain.balance reports USDC + network + wallet (chain-aware)', async () => 
   expect(r.content).toContain(ACCT)
 })
 
-test('chain.balance shows a granted MetaMask budget when present', async () => {
+test('chain.balance reports the granting MetaMask account + ETH + budget when a grant is active', async () => {
+  const META = '0x83d412b9dc65fc728455a1AFE00cE8812CdCce13' as const
   const balance = makeOnchainTools({
     account: ACCT,
     network: 'Base Sepolia',
+    grantedFrom: META,
     grantedBudget: '25 USDC/week',
-    readUsdcBalance: () => Promise.resolve(0n),
+    readUsdcBalance: () => Promise.resolve(77_009_999n),
+    readEthBalance: () => Promise.resolve(9_942_541_582_359_865n),
     sendUsdc: () => Promise.resolve({ taskId: '0x', status: 200 }),
   })[0]!
   const r = await balance.run({}, {} as ToolContext)
-  expect(r.content).toContain('MetaMask budget: 25 USDC/week')
+  expect(r.content).toContain(`MetaMask ${META}`)
+  expect(r.content).toContain('77.009999 USDC')
+  expect(r.content).toContain('ETH (gas)')
+  expect(r.content).toContain('25 USDC/week')
+})
+
+test('chain.token reads any ERC-20 balance', async () => {
+  const tools = makeOnchainTools({
+    account: ACCT,
+    network: 'Base Sepolia',
+    readUsdcBalance: () => Promise.resolve(0n),
+    readToken: async () => ({ symbol: 'EURC', decimals: 6, balance: 20_000_000n }),
+    sendUsdc: () => Promise.resolve({ taskId: '0x', status: 200 }),
+  })
+  const token = tools.find(t => t.name === 'chain.token')!
+  const r = await token.run(
+    { token: '0x808456652fdb75884d07e4b8b3f9e87d6a8d3e0e' },
+    {} as ToolContext,
+  )
+  expect(r.ok).toBe(true)
+  expect(r.content).toContain('20 EURC')
 })
 
 test('chain.send reports the relay result', async () => {

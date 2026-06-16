@@ -17,7 +17,16 @@ import {
   relayUsdcTransfer,
 } from '@compass_agents/relayer-1shot'
 import { type FetchImpl, payFetch } from '@compass_agents/x402'
-import { type Hex, concatHex, keccak256, stringToHex } from 'viem'
+import {
+  http,
+  type Address,
+  type Hex,
+  concatHex,
+  createPublicClient,
+  erc20Abi,
+  keccak256,
+  stringToHex,
+} from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { z } from 'zod'
 import { makeOnchainTools } from './onchain'
@@ -37,17 +46,21 @@ function readGrant(chainId: number): { permissionsContext: Hex } | null {
   return null
 }
 
-/** The human budget string of a MetaMask grant for this chain, if any. */
-function grantBudgetString(chainId: number): string | undefined {
-  if (!existsSync(GRANT_PATH)) return undefined
+/** The granting MetaMask account + budget of a grant for this chain (the spendable source). */
+function readGrantInfo(chainId: number): { account: Address; budget?: string } | null {
+  if (!existsSync(GRANT_PATH)) return null
   try {
     const g = JSON.parse(readFileSync(GRANT_PATH, 'utf8'))
-    if (g.chainId === chainId && g.budget)
-      return `${g.budget.amount} ${g.budget.token}/${g.budget.period}`
+    if (g.chainId === chainId && g.account) {
+      return {
+        account: g.account as Address,
+        ...(g.budget ? { budget: `${g.budget.amount} ${g.budget.token}/${g.budget.period}` } : {}),
+      }
+    }
   } catch {
-    /* ignore */
+    /* ignore a malformed grant */
   }
-  return undefined
+  return null
 }
 
 /**
@@ -68,13 +81,34 @@ export function buildOnchainTools(config: CompassConfig, pk: Hex): ToolDef[] {
   const helperKey = keccak256(concatHex([pk, stringToHex('compass-helper-v1')]))
   const helperAccount = privateKeyToAccount(helperKey).address
 
-  const grantedBudget = grantBudgetString(chainId)
+  // With a MetaMask grant, the spendable funds live in the GRANTING account (your
+  // MetaMask), not the agent's session wallet — so balances must read that account.
+  const grant = readGrantInfo(chainId)
+  const spendable = grant?.account ?? account
+  const client = createPublicClient({ transport: http(rpcUrl) })
+  const readToken = async (t: Address) => {
+    const [symbol, dec, bal] = await Promise.all([
+      client.readContract({ address: t, abi: erc20Abi, functionName: 'symbol' }),
+      client.readContract({ address: t, abi: erc20Abi, functionName: 'decimals' }),
+      client.readContract({
+        address: t,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [spendable],
+      }),
+    ])
+    return { symbol: symbol as string, decimals: Number(dec), balance: bal as bigint }
+  }
+
   const tools: ToolDef[] = [
     ...makeOnchainTools({
       account,
       ...(config.network.name ? { network: config.network.name } : {}),
-      ...(grantedBudget ? { grantedBudget } : {}),
-      readUsdcBalance: () => readErc20Balance({ chainId, rpcUrl, token, account }),
+      ...(grant ? { grantedFrom: grant.account } : {}),
+      ...(grant?.budget ? { grantedBudget: grant.budget } : {}),
+      readUsdcBalance: () => readErc20Balance({ chainId, rpcUrl, token, account: spendable }),
+      readEthBalance: () => client.getBalance({ address: spendable }),
+      readToken,
       sendUsdc: (to, amount) => {
         // Prefer a MetaMask ERC-7715 grant (from `compass connect`) when present —
         // the user's wallet funds it; otherwise spend from the local operator key.
