@@ -41,6 +41,8 @@ export class TelegramListener {
   private running = false
   private readonly pending = new Map<string, (choice: ApprovalChoice) => void>()
   private readonly nextApprovalId = makeApprovalIdFactory()
+  /** In-flight message handling, serialized per chat so the poll loop never blocks. */
+  private readonly inflight = new Map<string, Promise<void>>()
 
   constructor(opts: TelegramListenerOpts) {
     this.client = opts.client
@@ -66,13 +68,32 @@ export class TelegramListener {
       }
       for (const u of updates) {
         this.offset = u.update_id + 1
-        try {
-          await this.handleUpdate(u)
-        } catch (err) {
-          this.onError(err)
-        }
+        // Never block the poll loop on a message. A dangerous-tool approval arrives
+        // as a *separate* callback_query update — if we awaited the message handler
+        // (which itself blocks on that approval) the loop could never fetch the button
+        // press, and every dangerous action would dead-time-out into a deny. So we
+        // dispatch off the loop: messages run on a per-chat queue, callbacks resolve
+        // immediately and out-of-band.
+        this.dispatch(u)
       }
     }
+  }
+
+  /** Route an update off the poll loop so approvals can flow back concurrently. */
+  private dispatch(update: TgUpdate): void {
+    if (update.callback_query) {
+      void this.handleUpdate(update).catch(err => this.onError(err))
+      return
+    }
+    const chatId = update.message ? String(update.message.chat.id) : 'unknown'
+    const prev = this.inflight.get(chatId) ?? Promise.resolve()
+    const next = prev.then(() => this.handleUpdate(update)).catch(err => this.onError(err))
+    this.inflight.set(
+      chatId,
+      next.finally(() => {
+        if (this.inflight.get(chatId) === next) this.inflight.delete(chatId)
+      }),
+    )
   }
 
   stop(): void {

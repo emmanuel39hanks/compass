@@ -134,6 +134,59 @@ test('dangerous tool → approval keyboard, button press runs it', async () => {
   expect(answered).toContainEqual({ id: 'cb1', text: 'Approved' })
 })
 
+test('poll loop does not deadlock: an approval arriving mid-turn is processed', async () => {
+  // Regression: the message handler blocks awaiting an approval. The button press
+  // arrives as a *separate* update — the poll loop must stay free to fetch it,
+  // otherwise the approval dead-times-out and only read-only tools ever work.
+  const ran = { count: 0 }
+  const danger: ToolDef<Record<string, never>> = {
+    name: 'chain.send',
+    description: 'send funds',
+    dangerous: true,
+    schema: z.object({}),
+    run: () => {
+      ran.count++
+      return { content: 'sent', ok: true }
+    },
+  }
+  const gw = await gatewayWith(
+    [
+      { content: null, toolCalls: [{ id: '1', name: 'chain.send', args: {} }] },
+      { content: 'all done', toolCalls: [] },
+    ],
+    danger,
+  )
+  const { client, sent } = mockClient()
+
+  let polls = 0
+  let callbackSent = false
+  // First poll yields the message; later polls surface the operator's button press
+  // once the approval keyboard has been sent.
+  ;(client as unknown as { getUpdates: TelegramClient['getUpdates'] }).getUpdates = async () => {
+    polls++
+    await new Promise(r => setTimeout(r, 5))
+    if (polls === 1) return [msgUpdate(1, 'send 1 USDC')]
+    const kb = sent.find(s => s.opts.replyMarkup)
+    if (kb && !callbackSent) {
+      callbackSent = true
+      const data = kb.opts.replyMarkup?.inline_keyboard[0]?.[0]?.callback_data
+      return [
+        { update_id: 2, callback_query: { id: 'cb1', from: { id: 5, is_bot: false }, data } },
+      ] as TgUpdate[]
+    }
+    return []
+  }
+
+  const tg = new TelegramListener({ client, gateway: gw, approvalTimeoutMs: 3000 })
+  void tg.start()
+  const deadline = Date.now() + 2000
+  while (ran.count === 0 && Date.now() < deadline) await new Promise(r => setTimeout(r, 10))
+  tg.stop()
+
+  expect(ran.count).toBe(1) // the tool ran → the approval was NOT deadlocked
+  expect(sent.some(s => s.text === 'all done')).toBe(true)
+})
+
 test('unpaired sender gets a pairing prompt (gateway pairing)', async () => {
   const { PairingStore } = await import('@compass_agents/gateway')
   const pairing = new PairingStore({ genCode: () => 'PAIR42' })

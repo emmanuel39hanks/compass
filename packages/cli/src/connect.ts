@@ -43,30 +43,36 @@ export interface GrantedPermission {
 
 const PERIOD_SECONDS: Record<string, number> = { day: 86_400, week: 604_800, month: 2_592_000 }
 
-/** Build the ERC-7715 permission request the page will send to MetaMask. */
+/**
+ * Build the ERC-7715 `wallet_requestExecutionPermissions` request the page sends
+ * to MetaMask. Shape per the MetaMask Smart Accounts Kit advanced-permissions
+ * reference: the grantee is `to` (the session account), the budget lives in
+ * `permission.data`, and `isAdjustmentAllowed` lets the user tweak the cap before
+ * approving. (Note: `signer`/`token`/`startTime` are the older grantPermissions
+ * shape — this method rejects them.)
+ */
 export function buildPermissionsRequest(opts: {
   chainId: number
   grantee: Address
   token: Address
   periodAmount: bigint
   periodSeconds: number
-  startTime: number
   expiry: number
 }) {
   return [
     {
       chainId: toHex(opts.chainId),
       expiry: opts.expiry,
-      signer: { type: 'account', data: { address: opts.grantee } },
+      to: opts.grantee,
       permission: {
         type: 'erc20-token-periodic',
         data: {
-          token: opts.token,
+          tokenAddress: opts.token,
           periodAmount: toHex(opts.periodAmount),
           periodDuration: opts.periodSeconds,
-          startTime: opts.startTime,
           justification: 'compass agent spending budget',
         },
+        isAdjustmentAllowed: true,
       },
     },
   ]
@@ -93,7 +99,6 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
     token,
     periodAmount,
     periodSeconds,
-    startTime: now,
     expiry: now + 30 * 86_400,
   })
   const page = connectPage({
