@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/plugin-a2a",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "description": "Agent-to-agent coordination: redelegation transport (the delegation 'inbox'), peer/contact registry, and the coordination protocol.",
   "license": "MIT",

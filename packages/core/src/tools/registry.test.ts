@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { z } from 'zod'
 import { ApprovalGate } from '../permission/approvals'
-import { ToolRegistry } from './registry'
+import { ToolRegistry, sanitizeJsonSchema } from './registry'
 import type { ToolContext, ToolDef } from './types'
 
 const echo: ToolDef<{ msg: string }> = {
@@ -33,6 +33,35 @@ test('schemas produce json-schema parameters', () => {
   const [s] = r.schemas()
   expect(s?.name).toBe('echo')
   expect(JSON.stringify(s?.parameters)).toContain('msg')
+})
+
+test('schemas never advertise a boolean exclusiveMinimum (Venice rejects it)', () => {
+  // `.positive()` compiles to {minimum:0, exclusiveMinimum:true} under openApi3 —
+  // which made Venice 400 the entire tool list. The registry must sanitize it.
+  const r = new ToolRegistry()
+  r.register({
+    name: 'paged',
+    description: 'has a positive number',
+    schema: z.object({ limit: z.number().positive() }),
+    run: () => ({ content: '', ok: true }),
+  } as ToolDef)
+  const json = JSON.stringify(r.schemas()[0]?.parameters)
+  expect(json).not.toContain('"exclusiveMinimum":true')
+  expect(json).toContain('"exclusiveMinimum":0') // converted to the numeric form
+})
+
+test('sanitizeJsonSchema converts OpenAPI-3 boolean exclusive bounds to numbers', () => {
+  const out = sanitizeJsonSchema({
+    type: 'object',
+    properties: {
+      a: { type: 'number', minimum: 0, exclusiveMinimum: true },
+      b: { type: 'number', maximum: 50, exclusiveMaximum: true },
+      c: { type: 'number', minimum: 1, exclusiveMinimum: false },
+    },
+  }) as { properties: Record<string, Record<string, unknown>> }
+  expect(out.properties.a).toEqual({ type: 'number', exclusiveMinimum: 0 })
+  expect(out.properties.b).toEqual({ type: 'number', exclusiveMaximum: 50 })
+  expect(out.properties.c).toEqual({ type: 'number', minimum: 1 })
 })
 
 test('dispatch: unknown tool', async () => {

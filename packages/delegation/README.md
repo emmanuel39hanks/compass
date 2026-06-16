@@ -1,6 +1,6 @@
 # @compass_agents/delegation
 
-MetaMask Smart Accounts Kit wrapper: smart accounts, ERC-7710 delegation/redelegation, caveat builders, redeemDelegations.
+MetaMask Smart Accounts Kit wrapper: smart accounts, ERC-7710 delegation/redelegation, caveat builders, redeemDelegations, plus ERC-8004 identity + reputation + validation registries.
 
 Part of **compass** — personal on-chain agents that grant each other scoped, revocable
 authority via MetaMask redelegation (ERC-7710), reason with Venice AI, and execute

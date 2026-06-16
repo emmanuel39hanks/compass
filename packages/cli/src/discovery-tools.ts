@@ -24,7 +24,7 @@ export function makeDiscoveryTools(opts: DiscoveryToolOpts = {}): ToolDef[] {
       'Returns each resource URL, price, and network — then use `pay` to purchase one.',
     schema: z.object({
       query: z.string().optional().describe('Keyword, e.g. "crypto prices", "weather".'),
-      limit: z.number().int().positive().max(50).optional(),
+      limit: z.number().int().min(1).max(50).optional(),
     }),
     run: async args => {
       try {
