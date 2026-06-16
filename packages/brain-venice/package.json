@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/brain-venice",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "Venice AI brain provider (OpenAI-compatible chat + tool calling, plus image/TTS media tools).",
   "license": "MIT",

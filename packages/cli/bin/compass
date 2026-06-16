@@ -3,8 +3,8 @@
  * compass CLI entrypoint. Shebangs `bun` so .ts runs directly (no build step).
  * `compass demo` runs the offline end-to-end spine.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { VeniceBrain } from '@compass_agents/brain-venice'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { VeniceBrain, makeVeniceMediaTools } from '@compass_agents/brain-venice'
 import {
   ActivityLog,
   MemoryStore,
@@ -24,7 +24,7 @@ import {
   registerAgent,
 } from '@compass_agents/delegation'
 import { Gateway, PairingStore } from '@compass_agents/gateway'
-import { publicKeyFor } from '@compass_agents/plugin-a2a'
+import { buildAgentCard, publicKeyFor } from '@compass_agents/plugin-a2a'
 import { TelegramClient, TelegramListener } from '@compass_agents/plugin-telegram'
 import { readErc20Balance, relayerTarget } from '@compass_agents/relayer-1shot'
 import * as clack from '@clack/prompts'
@@ -38,10 +38,11 @@ import { runConnect } from '../src/connect'
 import { makeWebTools } from '../src/web-tools'
 import { helpText, isKnownCommand, parseArgv } from '../src/commands'
 import { runDemoSpine } from '../src/demo'
+import { makeDiscoveryTools } from '../src/discovery-tools'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.14'
+const VERSION = '0.1.15'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -360,7 +361,7 @@ async function runChat() {
 
   // Wire on-chain capabilities when an operator key is present.
   const pk = process.env.COMPASS_PRIVATE_KEY
-  const extraTools = [...makeWebTools(), ...(pk ? buildOnchainTools(config, pk) : [])]
+  const extraTools = [...keylessTools(apiKey), ...(pk ? buildOnchainTools(config, pk) : [])]
 
   const session = createSession({ brain, memory, approvalsMode: config.approvals.mode, extraTools })
 
@@ -379,11 +380,29 @@ async function runChat() {
   await startRepl(session)
 }
 
-/** Build the gateway's ToolRegistry: memory tools + on-chain tools (when keyed). */
-function buildGatewayTools(config, pk) {
+/** Persist generated media (image/audio) under .compass/media and return the path. */
+function saveMedia(name, bytes) {
+  mkdirSync('.compass/media', { recursive: true })
+  const path = `.compass/media/${name}`
+  writeFileSync(path, bytes)
+  return path
+}
+
+/** Tools that need no operator key: web research, Venice media, x402 discovery. */
+function keylessTools(apiKey) {
+  const discoveryUrl = process.env.X402_DISCOVERY_URL
+  return [
+    ...makeWebTools(),
+    ...makeVeniceMediaTools({ apiKey, save: saveMedia }),
+    ...makeDiscoveryTools(discoveryUrl ? { url: discoveryUrl } : {}),
+  ]
+}
+
+/** Build the gateway's ToolRegistry: memory + keyless + on-chain (when keyed). */
+function buildGatewayTools(config, pk, apiKey) {
   const tools = new ToolRegistry()
   for (const tool of makeMemoryTools()) tools.register(tool)
-  for (const tool of makeWebTools()) tools.register(tool)
+  for (const tool of keylessTools(apiKey)) tools.register(tool)
   if (pk) for (const tool of buildOnchainTools(config, pk)) tools.register(tool)
   return tools
 }
@@ -406,7 +425,7 @@ async function runServe() {
   const pairing = new PairingStore({ path: '.compass/pairing.json' })
   const gateway = new Gateway({
     brain,
-    tools: buildGatewayTools(config, pk),
+    tools: buildGatewayTools(config, pk, apiKey),
     memory,
     system: COMPASS_SYSTEM,
     approvalsMode: config.approvals.mode,
@@ -590,6 +609,33 @@ async function runMemory(args) {
   console.log('usage: compass memory <export|import> <file>')
 }
 
+/** `compass card` — write a standard A2A AgentCard so other agents can discover this one. */
+function runCard() {
+  if (!existsSync(CONFIG_PATH)) {
+    console.log('run `compass init` first.')
+    return
+  }
+  const config = parseConfig(JSON.parse(readFileSync(CONFIG_PATH, 'utf8')))
+  const name = config.identity.agentName ?? 'compass'
+  const url = process.env.COMPASS_AGENT_URL ?? `https://compass.app/a/${name}`
+  const pk = process.env.COMPASS_PRIVATE_KEY
+  const toolNames = [
+    'web.search',
+    'discover',
+    'venice.image',
+    'venice.vision',
+    'venice.speak',
+    ...(pk ? ['chain.send', 'a2a.hire'] : []),
+    ...(config.budget ? ['pay'] : []),
+  ]
+  const card = buildAgentCard({ name, url, toolNames })
+  mkdirSync('.well-known', { recursive: true })
+  const out = '.well-known/agent-card.json'
+  writeFileSync(out, `${JSON.stringify(card, null, 2)}\n`)
+  console.log(`✓ wrote ${out} — serve it at <your-url>/.well-known/agent-card.json`)
+  console.log(JSON.stringify(card, null, 2))
+}
+
 async function main() {
   const argv = process.argv.slice(2)
   if (argv.length === 0) {
@@ -619,6 +665,10 @@ async function main() {
   }
   if (name === 'status') {
     runStatus()
+    return
+  }
+  if (name === 'card') {
+    runCard()
     return
   }
   if (name === 'serve' || name === 'daemon') {
