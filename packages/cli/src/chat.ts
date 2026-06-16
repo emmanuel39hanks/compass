@@ -101,9 +101,37 @@ export function chatTurn(
   )
 }
 
+/** A short, readable preview of a tool call's args for the approval prompt. */
+function summarizeCall(args: unknown): string {
+  try {
+    const s = JSON.stringify(args)
+    if (!s || s === '{}') return ''
+    return s.length > 80 ? `${s.slice(0, 77)}…` : s
+  } catch {
+    return ''
+  }
+}
+
 /** Interactive readline REPL — the `compass` chat. */
 export async function startRepl(session: ChatSession): Promise<void> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
+  // Authorize dangerous tools (chain.send, a2a.hire, …) right here in the terminal.
+  // Without a prompter the gate denies them outright ("no prompter configured").
+  session.gate.setPrompter(async (call, tool) => {
+    const summary = summarizeCall(call.args)
+    const ans = (
+      await rl.question(
+        `\n  ⚠ approve  ${tool.name}${summary ? `  ${summary}` : ''}  ? [y/N/a=always] `,
+      )
+    )
+      .trim()
+      .toLowerCase()
+    if (ans === 'a' || ans === 'always') {
+      session.gate.allowForSession(tool.name)
+      return true
+    }
+    return ans === 'y' || ans === 'yes'
+  })
   let history: BrainMessage[] = []
   console.log('compass · chat — tell your agent a goal in plain English. /exit to quit.\n')
   for (;;) {

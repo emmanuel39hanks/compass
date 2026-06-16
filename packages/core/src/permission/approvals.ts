@@ -32,7 +32,7 @@ export interface ApprovalGateOpts {
  */
 export class ApprovalGate {
   private readonly mode: ApprovalMode
-  private readonly prompter: Prompter | undefined
+  private prompter: Prompter | undefined
   private readonly denyPatterns: RegExp[]
   private readonly sessionAllowed = new Set<string>()
 
@@ -40,6 +40,11 @@ export class ApprovalGate {
     this.mode = opts.mode
     this.prompter = opts.prompter
     this.denyPatterns = opts.denyPatterns ?? DEFAULT_DENY_PATTERNS
+  }
+
+  /** Set/replace the prompter that authorizes dangerous tools (e.g. a terminal y/N). */
+  setPrompter(prompter: Prompter): void {
+    this.prompter = prompter
   }
 
   private hardDenied(call: ToolCall): boolean {

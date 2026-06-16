@@ -55,6 +55,19 @@ test('prompt mode denies when prompter refuses', async () => {
   expect((await g.check(call('shell.run'), dangerTool)).allowed).toBe(false)
 })
 
+test('no prompter denies dangerous in prompt mode (the bug: terminal REPL had none)', async () => {
+  const g = new ApprovalGate({ mode: 'prompt' })
+  const d = await g.check(call('shell.run'), dangerTool)
+  expect(d.allowed).toBe(false)
+  expect(d.reason).toContain('no prompter')
+})
+
+test('setPrompter wires a prompter after construction (the REPL fix)', async () => {
+  const g = new ApprovalGate({ mode: 'prompt' })
+  g.setPrompter(() => Promise.resolve(true))
+  expect((await g.check(call('shell.run'), dangerTool)).allowed).toBe(true)
+})
+
 test('session allowance skips the prompter', async () => {
   let count = 0
   const g = new ApprovalGate({
