@@ -103,7 +103,7 @@ takes your free [Venice](https://venice.ai/settings/api/keys) key, and writes a 
 ([faucet](https://faucet.circle.com)), then go.
 
 ```
-🧭  compass — set up your agent
+compass — set up your agent
 │  Which network?               ›  Base Sepolia (testnet)
 │  Name your agent              ›  scout
 │  Weekly spending limit        ›  25 USDC/week
@@ -112,6 +112,7 @@ takes your free [Venice](https://venice.ai/settings/api/keys) key, and writes a 
 │       Generate a new burner wallet        (testnet — simplest)
 │       Paste an existing private key
 │  Venice API key               ›  ••••••••
+│  Telegram bot token           ›  (optional — from @BotFather)
 └  ✓ ready — run `compass`
 ```
 
@@ -120,9 +121,17 @@ Then make it real:
 ```bash
 compass connect                # grant a budget from MetaMask in the browser (ERC-7715)
 compass register scout         # mint your agent identity NFT on Base (you own it)
-compass serve                  # text your agent from Telegram (set TELEGRAM_BOT_TOKEN)
+compass serve                  # go live on your own Telegram bot
 compass doctor                 # readiness check · compass logs — activity log
 ```
+
+### Run it on Telegram (your own bot)
+
+compass is **self-hosted**: you create your own bot with [@BotFather](https://t.me/BotFather)
+and run the agent yourself — your token, your keys, your box. `compass init` asks for the
+bot token; after that `compass serve` brings it online. To keep it always-on (local, a VPS
+like Hostinger / EC2 / a droplet, Docker, or Railway), see **[DEPLOY.md](./DEPLOY.md)** —
+each option is a copy-paste block.
 
 ### Develop
 

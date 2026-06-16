@@ -2,7 +2,7 @@ import { exec } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { USDC_BY_CHAIN, parseBudget, tokenDecimals } from '@compass_agents/delegation'
-import { type Address, parseUnits, toHex } from 'viem'
+import { type Address, toHex } from 'viem'
 
 /**
  * Browser "Connect MetaMask" flow. The CLI serves a local page, opens it, and the
@@ -41,15 +41,16 @@ export interface GrantedPermission {
   grantedAt: string
 }
 
-const PERIOD_SECONDS: Record<string, number> = { day: 86_400, week: 604_800, month: 2_592_000 }
-
 /**
  * Build the ERC-7715 `wallet_requestExecutionPermissions` request the page sends
  * to MetaMask. Shape per the MetaMask Smart Accounts Kit advanced-permissions
  * reference: the grantee is `to` (the session account), the budget lives in
  * `permission.data`, and `isAdjustmentAllowed` lets the user tweak the cap before
- * approving. (Note: `signer`/`token`/`startTime` are the older grantPermissions
- * shape — this method rejects them.)
+ * approving. The recurring cap is bounded by `periodAmount`/`periodDuration`.
+ *
+ * Note: `signer`/`token`/`startTime` are the older `grantPermissions` shape and a
+ * top-level `expiry` is likewise rejected by this method — MetaMask returns
+ * "Invalid params … expiry — Expected a value of type `never`" if any are present.
  */
 export function buildPermissionsRequest(opts: {
   chainId: number
@@ -57,12 +58,10 @@ export function buildPermissionsRequest(opts: {
   token: Address
   periodAmount: bigint
   periodSeconds: number
-  expiry: number
 }) {
   return [
     {
       chainId: toHex(opts.chainId),
-      expiry: opts.expiry,
       to: opts.grantee,
       permission: {
         type: 'erc20-token-periodic',
@@ -90,21 +89,16 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
   const spec = parseBudget(opts.budget)
   const token = USDC_BY_CHAIN[opts.chainId]
   if (!token) throw new Error(`no USDC mapped for chain ${opts.chainId}`)
-  const periodSeconds = PERIOD_SECONDS[spec.period] ?? 604_800
-  const periodAmount = parseUnits(spec.amount, tokenDecimals(spec.token))
-  const now = Math.floor(Date.now() / 1000)
-  const request = buildPermissionsRequest({
+  // The page builds the ERC-7715 request client-side so the user can lower the
+  // amount before granting — e.g. to match what their wallet can actually fund.
+  const page = connectPage({
     chainId: opts.chainId,
     grantee: opts.grantee,
     token,
-    periodAmount,
-    periodSeconds,
-    expiry: now + 30 * 86_400,
-  })
-  const page = connectPage({
-    chainId: opts.chainId,
-    budget: `${spec.amount} ${spec.token}/${spec.period}`,
-    request,
+    symbol: spec.token,
+    decimals: tokenDecimals(spec.token),
+    amount: spec.amount,
+    period: spec.period,
   })
 
   return new Promise<GrantedPermission>((resolve, reject) => {
@@ -127,6 +121,7 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
             accountMeta?: unknown
             signerMeta?: unknown
             account: Address
+            budget?: { amount: string; period: string }
           }
           const granted: GrantedPermission = {
             chainId: opts.chainId,
@@ -135,7 +130,12 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
             permissionsContext: body.permissionsContext,
             ...(body.accountMeta ? { accountMeta: body.accountMeta } : {}),
             ...(body.signerMeta ? { signerMeta: body.signerMeta } : {}),
-            budget: { token: spec.token, amount: spec.amount, period: spec.period },
+            // Record the budget actually granted (the user can lower it on the page).
+            budget: {
+              token: spec.token,
+              amount: body.budget?.amount ?? spec.amount,
+              period: body.budget?.period ?? spec.period,
+            },
             grantedAt: new Date().toISOString(),
           }
           mkdirSync(dirname(opts.outPath), { recursive: true })
@@ -154,38 +154,103 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
   })
 }
 
-/** The self-contained connect page (no build step; talks to window.ethereum). */
-function connectPage(data: { chainId: number; budget: string; request: unknown }): string {
+/**
+ * The self-contained connect page (no build step; talks to window.ethereum).
+ * Flat styling, the compass wordmark, and an editable budget — the user can lower
+ * the amount/period right here, then the page builds the ERC-7715 request
+ * client-side (mirroring {@link buildPermissionsRequest}) and posts the grant back.
+ */
+function connectPage(data: {
+  chainId: number
+  grantee: Address
+  token: Address
+  symbol: string
+  decimals: number
+  amount: string
+  period: string
+}): string {
+  const net =
+    data.chainId === 84_532
+      ? 'Base Sepolia'
+      : data.chainId === 8_453
+        ? 'Base'
+        : `chain ${data.chainId}`
+  const cfg = JSON.stringify({
+    chainId: toHex(data.chainId),
+    to: data.grantee,
+    token: data.token,
+    decimals: data.decimals,
+  })
+  const opt = (p: string) =>
+    `<option value="${p}"${p === data.period ? ' selected' : ''}>${p}</option>`
   return `<!doctype html><html><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Connect MetaMask · compass</title>
+<title>compass · connect</title>
 <style>
-:root{--ink:#15140f;--cream:#f3f1ea;--green:#1f9d55;--blue:#0376c9;--line:#e4e0d6}
-*{box-sizing:border-box;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif}
-body{margin:0;background:var(--cream);color:var(--ink);display:grid;place-items:center;min-height:100vh}
-.card{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:0 30px 80px rgba(40,33,12,.15);width:440px;padding:36px;text-align:center}
-h1{font-size:26px;margin:0 0 6px}.sub{color:#6f6a5c;margin:0 0 24px;font-size:15px}
-.row{display:flex;justify-content:space-between;padding:12px 0;border-top:1px solid var(--line);font-size:15px}
-.row b{font-weight:600}.mono{font-family:ui-monospace,monospace;font-size:13px}
-button{width:100%;border:0;border-radius:999px;padding:15px;font-size:16px;font-weight:700;cursor:pointer;margin-top:20px}
-.primary{background:var(--blue);color:#fff}.primary:disabled{opacity:.5;cursor:default}
-.ok{color:var(--green);font-weight:700;margin-top:18px}.err{color:#c0392b;margin-top:14px;font-size:14px}
-.muted{color:#6f6a5c;font-size:13px;margin-top:16px;line-height:1.5}
+:root{--ink:#15140f;--cream:#f3f1ea;--paper:#fff;--green:#1f9d55;--blue:#0376c9;--line:#e4e0d6;--dim:#6f6a5c}
+*{box-sizing:border-box;font-family:'Avenir Next','Avenir',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif}
+body{margin:0;background:var(--cream);color:var(--ink);display:grid;place-items:center;min-height:100vh;padding:24px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;width:420px;max-width:100%;padding:32px}
+.brand{font-size:27px;font-weight:600;letter-spacing:-.02em;margin:0}
+.sub{color:var(--dim);margin:8px 0 26px;font-size:14px;line-height:1.55}
+.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:0 0 8px;font-weight:600}
+.budget{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.budget input{border:0;outline:0;font-size:22px;font-weight:600;width:96px;color:var(--ink);background:transparent;-moz-appearance:textfield}
+.budget input::-webkit-outer-spin-button,.budget input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.budget .unit{font-size:15px;font-weight:600}
+.budget .slash{color:var(--dim)}
+.budget select{border:0;outline:0;font-size:15px;font-weight:600;color:var(--ink);background:transparent;cursor:pointer;margin-left:auto}
+.row{display:flex;justify-content:space-between;align-items:center;margin-top:18px;font-size:14px;color:var(--dim)}
+.row b{color:var(--ink);font-weight:600}
+button{width:100%;border:0;border-radius:10px;padding:14px;font-size:15px;font-weight:600;cursor:pointer;margin-top:24px;background:var(--blue);color:#fff}
+button:disabled{opacity:.5;cursor:default}
+.ok{color:var(--green);font-weight:600;margin-top:16px;font-size:14px}
+.err{color:#c0392b;margin-top:14px;font-size:13px;line-height:1.5}
+.muted{color:var(--dim);font-size:12px;margin-top:18px;line-height:1.55}
+a{color:var(--blue)}
 </style></head><body>
 <div class="card">
-  <h1>🧭 Connect MetaMask</h1>
-  <p class="sub">Grant your compass agent a spending budget — on-chain, revocable.</p>
-  <div class="row"><span>Budget</span><b>${data.budget}</b></div>
-  <div class="row"><span>Network</span><b>Base ${data.chainId === 84532 ? 'Sepolia' : ''}</b></div>
-  <button id="go" class="primary">Connect MetaMask &amp; grant budget</button>
+  <p class="brand">compass</p>
+  <p class="sub">Grant your agent a spending budget — enforced on-chain and revocable any time. Set the amount to whatever you can fund.</p>
+  <p class="label">Budget</p>
+  <div class="budget">
+    <input id="amount" type="number" min="0" step="0.01" inputmode="decimal" value="${data.amount}"/>
+    <span class="unit">${data.symbol}</span>
+    <span class="slash">/</span>
+    <select id="period">${opt('day')}${opt('week')}${opt('month')}</select>
+  </div>
+  <div class="row"><span>Network</span><b>${net}</b></div>
+  <button id="go">Connect MetaMask &amp; grant budget</button>
   <div id="status"></div>
-  <p class="muted">Uses ERC-7715 advanced permissions (MetaMask Flask). The agent can
-  spend up to the budget without asking each time — and you can revoke any time.</p>
+  <p class="muted">Uses ERC-7715 advanced permissions (MetaMask Flask). Your agent can spend up to this budget without asking each time — and you can revoke it whenever.</p>
 </div>
 <script>
-const REQUEST = ${JSON.stringify(data.request)};
+const CFG = ${cfg};
+const PERIODS = { day: 86400, week: 604800, month: 2592000 };
 const $ = id => document.getElementById(id);
 function ok(m){ $('status').innerHTML = '<div class="ok">'+m+'</div>'; }
 function err(m){ $('status').innerHTML = '<div class="err">'+m+'</div>'; }
+function toUnits(v){
+  var parts = String(v == null ? '' : v).trim().split('.');
+  var whole = (parts[0] || '0').replace(/[^0-9]/g, '');
+  var frac = ((parts[1] || '').replace(/[^0-9]/g, '') + '000000000000').slice(0, CFG.decimals);
+  return BigInt(((whole + frac).replace(/^0+(?=\\d)/, '')) || '0');
+}
+function buildRequest(){
+  return [{
+    chainId: CFG.chainId,
+    to: CFG.to,
+    permission: {
+      type: 'erc20-token-periodic',
+      data: {
+        tokenAddress: CFG.token,
+        periodAmount: '0x' + toUnits($('amount').value).toString(16),
+        periodDuration: PERIODS[$('period').value] || 604800,
+        justification: 'compass agent spending budget'
+      },
+      isAdjustmentAllowed: true
+    }
+  }];
+}
 function flask(){
   $('status').innerHTML = '<div class="err" style="text-align:left">Your MetaMask doesn\\'t support '
    + 'advanced permissions (ERC-7715) yet.<br><br>'
@@ -200,12 +265,13 @@ function unsupported(e){
 $('go').onclick = async () => {
   const eth = window.ethereum;
   if(!eth){ err('MetaMask not found — install it (and MetaMask Flask for advanced permissions).'); return; }
+  if(toUnits($('amount').value) <= 0n){ err('Enter a budget greater than 0.'); return; }
   $('go').disabled = true;
   try{
     const [account] = await eth.request({ method: 'eth_requestAccounts' });
     let result;
     try{
-      result = await eth.request({ method: 'wallet_requestExecutionPermissions', params: REQUEST });
+      result = await eth.request({ method: 'wallet_requestExecutionPermissions', params: buildRequest() });
     }catch(e){
       if(unsupported(e)){ $('go').disabled = false; flask(); return; }
       throw e;
@@ -214,7 +280,8 @@ $('go').onclick = async () => {
     const ctx = granted.context || granted.permissionsContext || (granted.permission && granted.permission.context);
     if(!ctx) throw new Error('No permission context returned');
     await fetch('/grant', { method:'POST', headers:{'content-type':'application/json'},
-      body: JSON.stringify({ permissionsContext: ctx, accountMeta: granted.accountMeta, signerMeta: granted.signerMeta, account }) });
+      body: JSON.stringify({ permissionsContext: ctx, accountMeta: granted.accountMeta, signerMeta: granted.signerMeta, account,
+        budget: { amount: $('amount').value, period: $('period').value } }) });
     ok('✓ Budget granted. Close this tab and return to the terminal.');
   }catch(e){
     $('go').disabled = false;

@@ -41,7 +41,7 @@ import { runDemoSpine } from '../src/demo'
 import { NETWORKS, buildInitConfig, upsertEnv } from '../src/init'
 import { renderStatus } from '../src/status'
 
-const VERSION = '0.1.7'
+const VERSION = '0.1.9'
 const CONFIG_PATH = 'compass.config.json'
 
 const ENV_PATH = '.env'
@@ -160,6 +160,17 @@ async function runInitWizard() {
     venice = entered || undefined
   }
 
+  // ── Telegram (optional) — your own bot, you host it ──
+  let botToken = process.env.TELEGRAM_BOT_TOKEN
+  if (!botToken) {
+    const entered = await clack.text({
+      message: 'Telegram bot token  (optional — create one with @BotFather; Enter to skip)',
+      placeholder: '123456:ABC…',
+    })
+    if (clack.isCancel(entered)) return clack.cancel('Aborted.')
+    botToken = entered || undefined
+  }
+
   // ── Write config + .env ──
   const agentName = name || 'scout'
   const account = pk ? addrOf(pk) : undefined
@@ -174,6 +185,7 @@ async function runInitWizard() {
   const kv = {}
   if (pk && pk !== envPk) kv.COMPASS_PRIVATE_KEY = pk
   if (venice && venice !== process.env.VENICE_API_KEY) kv.VENICE_API_KEY = venice
+  if (botToken && botToken !== process.env.TELEGRAM_BOT_TOKEN) kv.TELEGRAM_BOT_TOKEN = botToken
   if (Object.keys(kv).length) {
     const cur = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, 'utf8') : ''
     writeFileSync(ENV_PATH, upsertEnv(cur, kv), { mode: 0o600 })
@@ -186,6 +198,7 @@ async function runInitWizard() {
       `wallet    ${account ?? '(none yet)'}`,
       `budget    ${budget || '25 USDC/week'}`,
       `venice    ${venice ? '✓ set' : '— add later'}`,
+      `telegram  ${botToken ? '✓ bot token set' : '— optional, add later'}`,
     ].join('\n'),
     'Your agent',
   )
@@ -206,6 +219,11 @@ async function runInitWizard() {
   }
   if (!venice) steps.push('Add a Venice key: set VENICE_API_KEY (or re-run init)')
   steps.push('Run  compass  — and just talk to your agent')
+  steps.push(
+    botToken
+      ? 'Run  compass serve  — your agent goes live on your Telegram bot'
+      : 'Want Telegram? Create a bot with @BotFather, then  compass serve',
+  )
   clack.outro(`Next:\n   ${steps.map((s, i) => `${i + 1}. ${s}`).join('\n   ')}`)
 }
 

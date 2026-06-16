@@ -1,0 +1,14 @@
+# One-command self-host on any Docker host (VPS, EC2, droplet, or local):
+#   cp .env.example .env     # fill in your three secrets
+#   docker compose up -d     # your agent is live on your Telegram bot
+#   docker compose logs -f   # watch it
+services:
+  compass:
+    build: .
+    env_file: .env
+    volumes:
+      - compass-data:/app/.compass # pairing + memory + activity, persisted
+    restart: unless-stopped
+
+volumes:
+  compass-data:

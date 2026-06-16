@@ -1,20 +1,20 @@
-# compass live gateway — runs `compass serve` (Telegram surface) as a service.
-# Bun-native: ships TypeScript source, no build step.
+# compass — self-hosted agent gateway. Installs the published CLI and runs `compass serve`.
+# The same image works on Railway, Fly, a VPS (Hostinger / EC2 / droplet), or locally.
 FROM oven/bun:1
-
 WORKDIR /app
 
-# Install deps first (better layer caching). Workspace manifests + lockfile.
-COPY package.json bun.lock ./
-COPY packages ./packages
-RUN bun install --frozen-lockfile
+# Install the published CLI from npm — no repo checkout or build step.
+ARG COMPASS_VERSION=latest
+RUN echo '{"name":"compass-host","private":true}' > package.json \
+ && bun add @compass_agents/cli@${COMPASS_VERSION}
 
-# App source (bin + any remaining files).
-COPY . .
+# Pairing, memory, and the activity log live here — mount a volume to persist them.
+VOLUME ["/app/.compass"]
 
-# Persisted across restarts via a Railway volume mounted at /app/.compass
-# (memory, pairing, activity log). Config is regenerated from env on boot.
+# Defaults; override with your own env (COMPASS_NETWORK, COMPASS_BUDGET, …).
 ENV COMPASS_AGENT_NAME=scout \
-    COMPASS_BUDGET="25 USDC/week"
+    COMPASS_BUDGET="25 USDC/week" \
+    COMPASS_NETWORK=base-sepolia
 
-CMD ["sh", "scripts/start.sh"]
+COPY scripts/start.sh /app/start.sh
+CMD ["sh", "/app/start.sh"]

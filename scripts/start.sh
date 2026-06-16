@@ -1,16 +1,18 @@
 #!/usr/bin/env sh
-# Railway / container entrypoint: ensure config exists, then run the gateway.
-# Secrets come from env (VENICE_API_KEY, COMPASS_PRIVATE_KEY, TELEGRAM_BOT_TOKEN).
+# Container entrypoint: configure compass from env on first boot, then run the gateway.
+# Required env: VENICE_API_KEY, COMPASS_PRIVATE_KEY, TELEGRAM_BOT_TOKEN
+# Optional:     COMPASS_NETWORK, COMPASS_AGENT_NAME, COMPASS_BUDGET
 set -e
 
-CONFIG=compass.config.json
-if [ ! -f "$CONFIG" ]; then
-  echo "compass: initializing config…"
-  bun packages/cli/bin/compass init \
+COMPASS=./node_modules/.bin/compass
+
+if [ ! -f compass.config.json ]; then
+  echo "compass: configuring from env…"
+  "$COMPASS" init \
     --name "${COMPASS_AGENT_NAME:-scout}" \
     --budget "${COMPASS_BUDGET:-25 USDC/week}" \
     --network "${COMPASS_NETWORK:-base-sepolia}" || true
 fi
 
-echo "compass: starting gateway (serve)…"
-exec bun packages/cli/bin/compass serve
+echo "compass: starting gateway…"
+exec "$COMPASS" serve
