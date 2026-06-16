@@ -112,44 +112,107 @@ function summarizeCall(args: unknown): string {
   }
 }
 
-/** Interactive readline REPL — the `compass` chat. */
+/** A minimal, dependency-free terminal spinner so the chat never looks frozen. */
+function makeSpinner() {
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+  let timer: ReturnType<typeof setInterval> | null = null
+  let i = 0
+  let label = ''
+  const draw = () => {
+    i = (i + 1) % frames.length
+    process.stdout.write(`\r\x1b[K\x1b[2m${frames[i]} ${label}\x1b[0m`)
+  }
+  return {
+    start(text: string) {
+      label = text
+      if (timer) return
+      process.stdout.write('\x1b[?25l') // hide cursor
+      draw()
+      timer = setInterval(draw, 90)
+    },
+    set(text: string) {
+      label = text
+    },
+    stop() {
+      if (timer) {
+        clearInterval(timer)
+        timer = null
+      }
+      process.stdout.write('\r\x1b[K\x1b[?25h') // clear line + show cursor
+    },
+  }
+}
+
+/** A single turn may run this long before we abort it, so a stuck call never hangs. */
+const TURN_TIMEOUT_MS = 120_000
+
+/** Interactive readline REPL — the `compass` chat, with live "thinking…" feedback. */
 export async function startRepl(session: ChatSession): Promise<void> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const spin = makeSpinner()
+
   // Authorize dangerous tools (chain.send, a2a.hire, …) right here in the terminal.
   // Without a prompter the gate denies them outright ("no prompter configured").
   session.gate.setPrompter(async (call, tool) => {
+    spin.stop() // clear the spinner so the prompt renders cleanly
     const summary = summarizeCall(call.args)
     const ans = (
       await rl.question(
-        `\n  ⚠ approve  ${tool.name}${summary ? `  ${summary}` : ''}  ? [y/N/a=always] `,
+        `  \x1b[33m⚠ approve\x1b[0m ${tool.name}${summary ? ` \x1b[2m${summary}\x1b[0m` : ''}  [y/N/a=always] `,
       )
     )
       .trim()
       .toLowerCase()
+    let ok = false
     if (ans === 'a' || ans === 'always') {
       session.gate.allowForSession(tool.name)
-      return true
+      ok = true
+    } else if (ans === 'y' || ans === 'yes') {
+      ok = true
     }
-    return ans === 'y' || ans === 'yes'
+    if (ok) spin.start(`executing ${tool.name}…`)
+    return ok
   })
+
   let history: BrainMessage[] = []
   console.log('compass · chat — tell your agent a goal in plain English. /exit to quit.\n')
   for (;;) {
     let text: string
     try {
-      text = (await rl.question('you › ')).trim()
+      text = (await rl.question('\x1b[1myou ›\x1b[0m ')).trim()
     } catch {
       break // stdin closed (EOF / Ctrl-D)
     }
     if (!text) continue
     if (text === '/exit' || text === '/quit') break
+
+    spin.start('thinking…')
     try {
-      const res = await chatTurn(session, history, text)
+      const res = await runTurn(
+        { kind: 'chat', text },
+        {
+          brain: session.brain,
+          tools: session.tools,
+          gate: session.gate,
+          ctx: { ...session.ctx, signal: AbortSignal.timeout(TURN_TIMEOUT_MS) },
+          system: session.system,
+          history,
+          onThink: () => spin.set('thinking…'),
+          onToolStart: name => spin.set(`running ${name}…`),
+        },
+      )
+      spin.stop()
       history = res.history
       console.log(`\n${res.content}\n`)
     } catch (err) {
-      console.error(`error: ${(err as Error).message}\n`)
+      spin.stop()
+      const msg = (err as Error).message
+      const friendly = /abort|timeout|timed out/i.test(msg)
+        ? `the agent took too long (over ${TURN_TIMEOUT_MS / 1000}s) and was stopped — try again`
+        : msg
+      console.error(`\x1b[31m✗\x1b[0m ${friendly}\n`)
     }
   }
+  spin.stop()
   rl.close()
 }

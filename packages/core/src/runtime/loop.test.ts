@@ -46,6 +46,20 @@ test('loop executes a tool call then returns the final answer', async () => {
   expect(res.history.find(m => m.role === 'tool')?.content).toBe('5')
 })
 
+test('onThink fires once before every inference (drives the chat spinner)', async () => {
+  const brain = new StubBrain([
+    { content: null, toolCalls: [{ id: 't1', name: 'add', args: { a: 1, b: 1 } }] },
+    { content: 'done', toolCalls: [] },
+  ])
+  const { tools, gate, ctx } = setup()
+  let thinks = 0
+  await runTurn(
+    { kind: 'chat', text: 'go' },
+    { brain, tools, gate, ctx, system: 'sys', onThink: () => thinks++ },
+  )
+  expect(thinks).toBe(2) // two inferences → two "thinking…" transitions
+})
+
 test('loop stops at max iterations when the brain never concludes', async () => {
   const looping = () => ({
     content: null,

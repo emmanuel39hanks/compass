@@ -41,7 +41,10 @@ export function makeOnchainTools(deps: OnchainDeps): ToolDef[] {
       amount: z.string().regex(/^\d+(\.\d+)?$/),
     }),
     run: async args => {
-      const to = getAddress(args.to)
+      // Lowercase first: the schema already proved it's 40 hex chars, so this
+      // re-derives the correct EIP-55 checksum instead of throwing when the user
+      // pasted an address with non-canonical casing.
+      const to = getAddress(args.to.toLowerCase())
       const res = await deps.sendUsdc(to, parseUnits(args.amount, decimals))
       const ok = res.status >= 200 && res.status < 300
       const tx = res.hash ? ` · tx ${res.hash.slice(0, 12)}…` : ''

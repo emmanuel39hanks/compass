@@ -12,6 +12,8 @@ export interface RunTurnOpts {
   system: string
   history?: BrainMessage[]
   maxIterations?: number
+  /** Fired before each brain inference (so a UI can show a "thinking…" state). */
+  onThink?: () => void
   onToolStart?: (name: string) => void
 }
 
@@ -34,6 +36,7 @@ export async function runTurn(event: CompassEvent, opts: RunTurnOpts): Promise<R
   history.push({ role: 'user', content: event.text })
 
   for (let i = 1; i <= max; i++) {
+    opts.onThink?.()
     const turn = await opts.brain.infer({
       system: opts.system,
       messages: history,

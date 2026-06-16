@@ -38,3 +38,22 @@ test('chain.send rejects a malformed address at the schema', () => {
   })[1]!
   expect(send.schema.safeParse({ to: 'nope', amount: '1' }).success).toBe(false)
 })
+
+test('chain.send accepts a non-canonical EIP-55 casing (re-checksums, no throw)', async () => {
+  let got: string | undefined
+  const send = makeOnchainTools({
+    account: ACCT,
+    readUsdcBalance: () => Promise.resolve(0n),
+    sendUsdc: to => {
+      got = to
+      return Promise.resolve({ taskId: '0x', status: 200 })
+    },
+  })[1]!
+  // mixed-case address whose checksum is NOT canonical — viem getAddress() throws on it
+  const r = await send.run(
+    { to: '0xC495953DE50Ac375e3c564F4Acd4Cc48949576AE', amount: '0.1' },
+    {} as ToolContext,
+  )
+  expect(r.ok).toBe(true) // didn't throw
+  expect(got?.toLowerCase()).toBe('0xc495953de50ac375e3c564f4acd4cc48949576ae')
+})

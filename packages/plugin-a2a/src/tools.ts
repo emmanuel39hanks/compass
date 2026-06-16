@@ -101,7 +101,8 @@ export function makeHireTools(deps: HireToolDeps): ToolDef[] {
     }),
     run: async args => {
       const res = await deps.hire({
-        to: getAddress(args.to),
+        // Lowercase first so a non-canonical EIP-55 casing re-checksums instead of throwing.
+        to: getAddress(args.to.toLowerCase()),
         amount: parseUnits(args.amount, decimals),
         ...(args.helper ? { helper: args.helper } : {}),
         ...(args.task ? { task: args.task } : {}),
