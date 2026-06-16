@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/cli",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "type": "module",
   "description": "Compass CLI/TUI: compass init / chat / delegate / redelegate / revoke / status, with a live 1Shot webhook tx feed.",
   "license": "MIT",
@@ -19,7 +19,7 @@
     "@compass_agents/delegation": "0.1.6",
     "@compass_agents/gateway": "0.1.6",
     "@compass_agents/plugin-a2a": "0.1.6",
-    "@compass_agents/plugin-telegram": "0.1.6",
+    "@compass_agents/plugin-telegram": "0.1.7",
     "@compass_agents/relayer-1shot": "0.1.6",
     "@compass_agents/x402": "0.1.6",
     "viem": "^2.31.4",

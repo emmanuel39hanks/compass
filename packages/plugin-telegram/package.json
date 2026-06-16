@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/plugin-telegram",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "description": "Telegram surface for the compass gateway: raw Bot API client, long-poll listener, pairing, inline-keyboard approvals, MarkdownV2 + message chunking.",
   "license": "MIT",
