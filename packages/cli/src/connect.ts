@@ -99,6 +99,7 @@ export function runConnect(opts: ConnectOptions): Promise<GrantedPermission> {
     decimals: tokenDecimals(spec.token),
     amount: spec.amount,
     period: spec.period,
+    ...(opts.rpcUrl ? { rpcUrl: opts.rpcUrl } : {}),
   })
 
   return new Promise<GrantedPermission>((resolve, reject) => {
@@ -168,18 +169,33 @@ function connectPage(data: {
   decimals: number
   amount: string
   period: string
+  rpcUrl?: string
 }): string {
-  const net =
-    data.chainId === 84_532
-      ? 'Base Sepolia'
-      : data.chainId === 8_453
-        ? 'Base'
-        : `chain ${data.chainId}`
+  // Only Base / Base Sepolia are supported (see NETWORKS in init.ts). These params
+  // also feed wallet_addEthereumChain so the page can switch MetaMask to the right
+  // network before requesting the grant — a mismatch otherwise errors or, worse,
+  // grants on the wrong chain (and the 1Shot relayer for that chain can't redeem it).
+  const meta =
+    data.chainId === 8_453
+      ? { name: 'Base', rpc: 'https://mainnet.base.org', explorer: 'https://basescan.org' }
+      : {
+          name: 'Base Sepolia',
+          rpc: 'https://sepolia.base.org',
+          explorer: 'https://sepolia.basescan.org',
+        }
+  const net = meta.name
   const cfg = JSON.stringify({
     chainId: toHex(data.chainId),
     to: data.grantee,
     token: data.token,
     decimals: data.decimals,
+    chain: {
+      chainId: toHex(data.chainId),
+      chainName: meta.name,
+      nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+      rpcUrls: [data.rpcUrl || meta.rpc],
+      blockExplorerUrls: [meta.explorer],
+    },
   })
   const opt = (p: string) =>
     `<option value="${p}"${p === data.period ? ' selected' : ''}>${p}</option>`
@@ -262,6 +278,19 @@ function unsupported(e){
   return (e && (e.code === 4200 || e.code === -32601)) ||
     m.includes('does not exist') || m.includes('not available') || m.includes('not supported') || m.includes('unsupported');
 }
+// Make sure MetaMask is on the budget's network before requesting the grant.
+async function ensureChain(eth){
+  try{
+    await eth.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: CFG.chain.chainId }] });
+  }catch(e){
+    var code = (e && e.code != null) ? e.code : (e && e.data && e.data.originalError && e.data.originalError.code);
+    if(code === 4902 || /unrecognized chain|add this network|not been added|wallet_addethereumchain/i.test((e && e.message) || '')){
+      await eth.request({ method: 'wallet_addEthereumChain', params: [CFG.chain] }); // adding switches too
+    } else {
+      throw e;
+    }
+  }
+}
 $('go').onclick = async () => {
   const eth = window.ethereum;
   if(!eth){ err('MetaMask not found — install it (and MetaMask Flask for advanced permissions).'); return; }
@@ -269,6 +298,13 @@ $('go').onclick = async () => {
   $('go').disabled = true;
   try{
     const [account] = await eth.request({ method: 'eth_requestAccounts' });
+    try{
+      await ensureChain(eth); // switch to ${net} first (adds it if unknown)
+    }catch(e){
+      $('go').disabled = false;
+      err(e && e.code === 4001 ? 'Approve the switch to ${net} in MetaMask to continue.' : 'Could not switch MetaMask to ${net}: ' + ((e && e.message) || 'unknown error'));
+      return;
+    }
     let result;
     try{
       result = await eth.request({ method: 'wallet_requestExecutionPermissions', params: buildRequest() });

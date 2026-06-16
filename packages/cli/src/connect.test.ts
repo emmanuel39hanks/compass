@@ -47,6 +47,8 @@ test('connect server: page renders + a posted grant is captured and saved', asyn
 
   const page = await (await fetch(url)).text()
   expect(page).toContain('wallet_requestExecutionPermissions') // the ERC-7715 call
+  expect(page).toContain('wallet_switchEthereumChain') // switches MetaMask to the budget's chain first
+  expect(page).toContain('wallet_addEthereumChain') // …adding it if unknown (error 4902)
   expect(page).toContain(TARGET) // grantee (to) embedded for the client-side request
   expect(page).toContain('value="25"') // editable budget, prefilled from config
   expect(page).toContain('USDC') // the token unit
