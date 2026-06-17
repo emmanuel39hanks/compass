@@ -39,6 +39,7 @@ export function chainAwareSystem(c: ChainContext): string {
     `You operate on ${c.network} (chainId ${c.chainId}). Everything you read or do is on THIS network only — name it when asked about balance, funds, or which chain you're on.`,
     'For any balance/funds question, CALL YOUR TOOLS — never guess: `chain.balance` reports USDC and ETH (gas); `chain.token <contract address>` reports ANY other ERC-20 (EURC, DAI, …).',
     'Report ONLY what a tool returns. NEVER claim funds are "likely on Ethereum Sepolia" or on any other chain/token you cannot query. Do not refuse to check ETH or a token on your own network — just call the tool. If something is genuinely on another chain, say plainly you can only read this one and suggest the user check their wallet.',
+    'When a tool returns an error or doesn\'t confirm a transfer, relay its message faithfully — do NOT invent a cause. Recipient addresses are validated before chain.send runs, so NEVER say "invalid address" on your own; if a transfer fails it is a relayer/redemption issue, and you should report exactly what the tool said.',
   ]
   if (c.account) lines.push(`Your agent session wallet is ${c.account}.`)
   if (c.budget) lines.push(`Your spending budget is ${c.budget}.`)

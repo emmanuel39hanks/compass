@@ -67,15 +67,29 @@ export function makeOnchainTools(deps: OnchainDeps): ToolDef[] {
     }),
     run: async args => {
       // Lowercase first: the schema already proved it's 40 hex chars, so this
-      // re-derives the correct EIP-55 checksum instead of throwing when the user
-      // pasted an address with non-canonical casing.
+      // re-derives the correct EIP-55 checksum (the recipient address is valid).
       const to = getAddress(args.to.toLowerCase())
-      const res = await deps.sendUsdc(to, parseUnits(args.amount, decimals))
+      let res: { taskId: string; status: number; hash?: string }
+      try {
+        res = await deps.sendUsdc(to, parseUnits(args.amount, decimals))
+      } catch (err) {
+        // The address is already validated — surface the REAL relayer error verbatim.
+        return {
+          content: `the relayer rejected the transfer to ${to} (a valid address): ${(err as Error).message}`,
+          ok: false,
+        }
+      }
       const ok = res.status >= 200 && res.status < 300
       const tx = res.hash ? ` · tx ${res.hash.slice(0, 12)}…` : ''
+      if (ok) {
+        return {
+          content: `✓ sent ${args.amount} USDC to ${to} — task ${res.taskId.slice(0, 12)}…${tx}`,
+          ok: true,
+        }
+      }
       return {
-        content: `${ok ? '✓' : '…'} sent ${args.amount} USDC to ${args.to} — task ${res.taskId.slice(0, 12)}… (status ${res.status})${tx}`,
-        ok,
+        content: `the relayer did not confirm the transfer to ${to} (status ${res.status}, task ${res.taskId.slice(0, 12)}…). The recipient address is valid — this is a relayer/redemption issue, not an address problem.`,
+        ok: false,
       }
     },
   }
