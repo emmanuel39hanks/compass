@@ -274,6 +274,11 @@ function drive(renderer: CliRenderer, session: ChatSession, meta: TuiMeta): Prom
               append(`· ${name}`, C.tool)
               spin.set(`running ${name}…`)
             },
+            // Show what the tool actually returned — never let a paraphrase bury a real error.
+            onToolResult: (_name, content) => {
+              const line = content.length > 400 ? `${content.slice(0, 397)}…` : content
+              append(`  ↳ ${line}`, C.dim)
+            },
           },
         )
         history = res.history

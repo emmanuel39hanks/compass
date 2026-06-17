@@ -15,6 +15,8 @@ export interface RunTurnOpts {
   /** Fired before each brain inference (so a UI can show a "thinking…" state). */
   onThink?: () => void
   onToolStart?: (name: string) => void
+  /** Fired with each tool's raw result text — so a UI can show what the agent actually saw. */
+  onToolResult?: (name: string, content: string) => void
 }
 
 export interface RunTurnResult {
@@ -55,6 +57,8 @@ export async function runTurn(event: CompassEvent, opts: RunTurnOpts): Promise<R
     for (const call of turn.toolCalls) {
       opts.onToolStart?.(call.name)
       const msg = await opts.tools.dispatch(call, opts.ctx, opts.gate)
+      if (opts.onToolResult && typeof msg.content === 'string')
+        opts.onToolResult(call.name, msg.content)
       history.push(msg)
     }
   }

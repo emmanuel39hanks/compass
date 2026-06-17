@@ -15,7 +15,7 @@ export interface OneShotRelayerOpts {
 
 interface JsonRpcResponse<T> {
   result?: T
-  error?: { code?: number; message?: string }
+  error?: { code?: number; message?: string; data?: unknown }
 }
 
 /** Build the `relayer_send7710Transaction` params object from inputs. */
@@ -54,8 +54,13 @@ export class OneShotRelayer {
     })
     if (!res.ok) throw new Error(`relayer ${method} HTTP ${res.status}`)
     const json = (await res.json()) as JsonRpcResponse<T>
-    if (json.error)
-      throw new Error(`relayer ${method} error ${json.error.code}: ${json.error.message}`)
+    if (json.error) {
+      // 1Shot often tucks the on-chain revert reason into `data` — surface it.
+      const d = json.error.data
+        ? ` (${typeof json.error.data === 'string' ? json.error.data : JSON.stringify(json.error.data)})`
+        : ''
+      throw new Error(`relayer ${method} error ${json.error.code}: ${json.error.message}${d}`)
+    }
     if (json.result === undefined) throw new Error(`relayer ${method}: empty result`)
     return json.result
   }
