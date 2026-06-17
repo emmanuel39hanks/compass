@@ -6,8 +6,12 @@ import {
   InputRenderableEvents,
   type KeyEvent,
   ScrollBoxRenderable,
+  StyledText,
+  type TextChunk,
   TextRenderable,
   createCliRenderer,
+  fg as ofg,
+  link as olink,
 } from '@opentui/core'
 import type { ChatSession } from './chat'
 import { type SlashInfo, handleSlash, slashCommands } from './slash'
@@ -42,6 +46,22 @@ function summarize(args: unknown): string {
   } catch {
     return ''
   }
+}
+
+const URL_RE = /(?:https?|file):\/\/[^\s)]+/g
+
+/** Render a line as styled text with clickable (OSC-8) hyperlinks for any URL. */
+function linkify(content: string, base: string): StyledText {
+  const chunks: TextChunk[] = []
+  let last = 0
+  for (const m of content.matchAll(URL_RE)) {
+    const i = m.index ?? 0
+    if (i > last) chunks.push(ofg(base)(content.slice(last, i)))
+    chunks.push(olink(m[0])(ofg('#5aa9ff')(m[0])))
+    last = i + m[0].length
+  }
+  if (last < content.length) chunks.push(ofg(base)(content.slice(last)))
+  return new StyledText(chunks.length ? chunks : [ofg(base)(content)])
 }
 
 /**
@@ -129,14 +149,21 @@ function drive(renderer: CliRenderer, session: ChatSession, meta: TuiMeta): Prom
   screen.add(
     new TextRenderable(renderer, {
       id: 'footer',
-      content: '↵ send    /  commands    ↑↓ pick · Tab complete    ^C quit',
+      content: '↵ send    /  commands    ↑↓ pick · Tab complete    ⌘-click links    ^C quit',
       fg: C.dim,
     }),
   )
 
   let lineId = 0
   const append = (content: string, fg?: string) => {
-    log.add(new TextRenderable(renderer, { id: `l${lineId++}`, content, ...(fg ? { fg } : {}) }))
+    // URLs/file paths become clickable (OSC-8) hyperlinks; everything else is plain.
+    const node = content.includes('://')
+      ? new TextRenderable(renderer, {
+          id: `l${lineId++}`,
+          content: linkify(content, fg ?? C.agent),
+        })
+      : new TextRenderable(renderer, { id: `l${lineId++}`, content, ...(fg ? { fg } : {}) })
+    log.add(node)
     log.scrollTo(log.scrollHeight)
   }
 

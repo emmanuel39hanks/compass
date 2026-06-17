@@ -82,7 +82,8 @@ export function makeVeniceImageTool(opts: VeniceMediaOpts): ToolDef<z.infer<type
         for (let i = 0; i < imgs.length; i++) {
           paths.push(await opts.save(`image-${Date.now()}-${i}.png`, decodeBase64(imgs[i]!)))
         }
-        return { content: `generated → ${paths.join(', ')}`, ok: true }
+        const n = paths.length
+        return { content: `${n} image${n > 1 ? 's' : ''} saved → ${paths.join(', ')}`, ok: true }
       }
       return { content: `generated ${imgs.length} image(s) for: ${args.prompt}`, ok: true }
     },
@@ -159,7 +160,7 @@ export function makeVeniceSpeechTool(opts: VeniceMediaOpts): ToolDef<z.infer<typ
       const bytes = new Uint8Array(await res.arrayBuffer())
       if (opts.save) {
         const path = await opts.save(`speech-${Date.now()}.mp3`, bytes)
-        return { content: `spoke ${bytes.length} bytes → ${path}`, ok: true }
+        return { content: `audio saved (${bytes.length} bytes) → ${path}`, ok: true }
       }
       return { content: `generated ${bytes.length} bytes of audio`, ok: true }
     },

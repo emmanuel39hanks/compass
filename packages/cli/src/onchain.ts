@@ -73,9 +73,16 @@ export function makeOnchainTools(deps: OnchainDeps): ToolDef[] {
       try {
         res = await deps.sendUsdc(to, parseUnits(args.amount, decimals))
       } catch (err) {
-        // The address is already validated — surface the REAL relayer error verbatim.
+        // The recipient is already validated — surface the REAL relayer error, and
+        // when it's a null-address fault, name the true cause: the 1Shot relayer
+        // could not redeem the granted ERC-7715 budget (not the recipient).
+        const msg = (err as Error).message
+        const redemption = /invalid address|value=null|redeem|permission context/i.test(msg)
+        const hint = redemption
+          ? ' — the 1Shot relayer could not redeem your granted ERC-7715 budget (the recipient address is valid). Re-run `compass connect` to refresh the grant.'
+          : ''
         return {
-          content: `the relayer rejected the transfer to ${to} (a valid address): ${(err as Error).message}`,
+          content: `the transfer to ${to} did not go through (the address is valid): ${msg}${hint}`,
           ok: false,
         }
       }

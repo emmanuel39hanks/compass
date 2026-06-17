@@ -39,13 +39,26 @@ export function makeDiscoveryTools(opts: DiscoveryToolOpts = {}): ToolDef[] {
           return { content: 'the x402 Bazaar returned no listings right now', ok: true }
         }
         const limit = args.limit ?? 12
+        // One entry per service: description first (it's what you read), then a
+        // compact price·network line, then the URL on its own line so it's easy to
+        // read and click (the TUI renders URLs as clickable links).
         const fmt = (list: X402Service[]) =>
-          list.map(s => `• ${s.resource} — ${s.description} (${s.price}, ${s.network})`).join('\n')
+          list
+            .map((s, i) => {
+              const desc =
+                s.description.length > 110 ? `${s.description.slice(0, 107)}…` : s.description
+              const price = s.price === 'free' ? 'free' : s.price
+              return `${i + 1}. ${desc}\n   ${price} · ${s.network}\n   ${s.resource}`
+            })
+            .join('\n\n')
         const matched = filterServices(all, args.query, limit)
         if (matched.length > 0)
-          return { content: `found ${matched.length}:\n${fmt(matched)}`, ok: true }
+          return {
+            content: `${matched.length} payable ${matched.length === 1 ? 'service' : 'services'} on the x402 Bazaar:\n\n${fmt(matched)}\n\nBuy one with  /pay <url>.`,
+            ok: true,
+          }
         return {
-          content: `no Bazaar service matches "${args.query ?? ''}". The Bazaar lists ${all.length} — showing some:\n${fmt(all.slice(0, limit))}`,
+          content: `nothing matched "${args.query ?? ''}" — here are ${Math.min(limit, all.length)} of the ${all.length} services on the Bazaar:\n\n${fmt(all.slice(0, limit))}\n\nBuy one with  /pay <url>.`,
           ok: true,
         }
       } catch (err) {

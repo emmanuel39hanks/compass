@@ -4,6 +4,8 @@
  * `compass demo` runs the offline end-to-end spine.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { VeniceBrain, makeVeniceMediaTools } from '@compass_agents/brain-venice'
 import {
   ActivityLog,
@@ -399,12 +401,16 @@ async function runChat() {
   await startRepl(session)
 }
 
-/** Persist generated media (image/audio) under .compass/media and return the path. */
+/**
+ * Persist generated media (image/audio) under <cwd>/.compass/media and return a
+ * clickable absolute file:// URL — so you can always find it and the TUI links it.
+ */
 function saveMedia(name, bytes) {
-  mkdirSync('.compass/media', { recursive: true })
-  const path = `.compass/media/${name}`
-  writeFileSync(path, bytes)
-  return path
+  const dir = resolve(process.cwd(), '.compass', 'media')
+  mkdirSync(dir, { recursive: true })
+  const abs = resolve(dir, name)
+  writeFileSync(abs, bytes)
+  return pathToFileURL(abs).href
 }
 
 /** Tools that need no operator key: web research, Venice media, x402 discovery. */
