@@ -1,6 +1,6 @@
 {
   "name": "@compass_agents/cli",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "type": "module",
   "description": "Compass CLI/TUI: compass init / chat / delegate / redelegate / revoke / status, with a live 1Shot webhook tx feed.",
   "license": "MIT",
@@ -33,10 +33,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": [
-    "src",
-    "bin"
-  ],
+  "files": ["src", "bin"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/emmanuel39hanks/compass.git",

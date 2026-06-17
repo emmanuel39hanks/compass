@@ -8,7 +8,15 @@ import {
   signDelegation,
 } from '@compass_agents/delegation'
 import { erc20PeriodTransfer } from '@compass_agents/delegation'
-import { http, type Address, type Hex, createPublicClient, encodeFunctionData } from 'viem'
+import {
+  http,
+  type Address,
+  type Hex,
+  createPublicClient,
+  decodeAbiParameters,
+  encodeFunctionData,
+  toHex,
+} from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base, baseSepolia } from 'viem/chains'
 import { eip7702Implementation, toAuthorizationListEntry } from './auth-7702'
@@ -424,11 +432,56 @@ export async function relayGrantedTransfer(opts: RelayGrantedOpts): Promise<Rela
     feeCollector: caps.feeCollector,
     token: usdc.address,
     decimals: Number(usdc.decimals),
-    permissionContext: opts.permissionContext,
+    // The relayer wants the delegation as structured objects, not the raw ABI hex
+    // MetaMask hands back from ERC-7715 — decode it first (see decodePermissionContext).
+    permissionContext: decodePermissionContext(opts.permissionContext),
     to: opts.to,
     amount: opts.amount,
     memo: 'compass-granted',
   })
+}
+
+/** ABI of a MetaMask `Delegation[]` — the shape an ERC-7715 permission context encodes. */
+const DELEGATION_ARRAY_ABI = [
+  {
+    type: 'tuple[]',
+    components: [
+      { name: 'delegate', type: 'address' },
+      { name: 'delegator', type: 'address' },
+      { name: 'authority', type: 'bytes32' },
+      {
+        name: 'caveats',
+        type: 'tuple[]',
+        components: [
+          { name: 'enforcer', type: 'address' },
+          { name: 'terms', type: 'bytes' },
+          { name: 'args', type: 'bytes' },
+        ],
+      },
+      { name: 'salt', type: 'uint256' },
+      { name: 'signature', type: 'bytes' },
+    ],
+  },
+] as const
+
+/**
+ * Turn the ABI-encoded ERC-7715 permission context (the opaque hex MetaMask
+ * returns from `wallet_requestExecutionPermissions`) into the JSON-safe
+ * `Delegation[]` the 1Shot relayer expects. Passing the raw hex makes 1Shot read
+ * `.delegate`/`.delegator` off a string — they come back `undefined`, and it dies
+ * with `invalid address (value=null)`. Decoding to objects (with `salt` as a hex
+ * string, never a bigint) matches the proven `relayUsdcTransfer` redemption path.
+ */
+export function decodePermissionContext(ctx: Hex): Delegation[] {
+  const [delegations] = decodeAbiParameters(DELEGATION_ARRAY_ABI, ctx)
+  return delegations.map(d => ({
+    delegate: d.delegate,
+    delegator: d.delegator,
+    authority: d.authority,
+    caveats: d.caveats.map(c => ({ enforcer: c.enforcer, terms: c.terms, args: c.args })),
+    salt: toHex(d.salt),
+    signature: d.signature,
+  })) as Delegation[]
 }
 
 /** The 1Shot redeemer address for a chain — the grantee a `compass connect` budget targets. */
