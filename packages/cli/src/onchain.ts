@@ -24,7 +24,7 @@ export interface OnchainDeps {
   sendUsdc: (
     to: Address,
     amount: bigint,
-  ) => Promise<{ taskId: string; status: number; hash?: string }>
+  ) => Promise<{ taskId: string; status: number; hash?: string; reason?: string }>
   decimals?: number
 }
 
@@ -69,7 +69,7 @@ export function makeOnchainTools(deps: OnchainDeps): ToolDef[] {
       // Lowercase first: the schema already proved it's 40 hex chars, so this
       // re-derives the correct EIP-55 checksum (the recipient address is valid).
       const to = getAddress(args.to.toLowerCase())
-      let res: { taskId: string; status: number; hash?: string }
+      let res: { taskId: string; status: number; hash?: string; reason?: string }
       try {
         res = await deps.sendUsdc(to, parseUnits(args.amount, decimals))
       } catch (err) {
@@ -95,7 +95,7 @@ export function makeOnchainTools(deps: OnchainDeps): ToolDef[] {
         }
       }
       return {
-        content: `the relayer did not confirm the transfer to ${to} (status ${res.status}, task ${res.taskId.slice(0, 12)}…). The recipient address is valid — this is a relayer/redemption issue, not an address problem.`,
+        content: `the relayer did not confirm the transfer to ${to} (status ${res.status}, task ${res.taskId.slice(0, 12)}…)${res.reason ? `: ${res.reason}` : ''}. The recipient address is valid — this is a relayer/redemption issue, not an address problem.`,
         ok: false,
       }
     },

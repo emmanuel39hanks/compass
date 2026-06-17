@@ -98,6 +98,8 @@ export interface RelayResult {
   taskId: Hex
   status: number
   hash?: Hex
+  /** On a failed redemption (status ≥ 400), the relayer's message + on-chain reason. */
+  reason?: string
 }
 
 /** Sign a 7702 authorization for `account` to run the delegator implementation. */
@@ -136,7 +138,14 @@ async function submitUsdcWork(opts: {
   amount: bigint
   memo: string
 }): Promise<RelayResult> {
-  const probeFee = 10n ** BigInt(opts.decimals) / 2n // 0.5 USDC probe
+  // The probe doubles as (a) the fee amount simulated during estimation and (b) the
+  // fee floor (`feeAmount` = max(required, probe)). Both are spent through the SAME
+  // ERC20PeriodTransferEnforcer as the transfer, so an oversized probe blows a tight
+  // budget: a 0.5-USDC probe + a 0.10 transfer exceeds a 0.5-USDC/week grant and the
+  // enforcer reverts with `transfer-amount-exceeded` — even though the real relayer
+  // fee is ~0.01 USDC. Keep it small; `required` from the estimate floats it up if a
+  // chain actually costs more, so we never underpay.
+  const probeFee = 10n ** BigInt(opts.decimals) / 50n // 0.02 USDC probe / floor
   const feeExec = (amt: bigint) => erc20TransferExecution(opts.token, opts.feeCollector, amt)
   const workExec = erc20TransferExecution(opts.token, opts.to, opts.amount)
   const authList = opts.authEntry ? [opts.authEntry] : undefined
@@ -163,14 +172,19 @@ async function submitUsdcWork(opts: {
 
   let status = 100
   let hash: Hex | undefined
+  let reason: string | undefined
   for (let i = 0; i < 30; i++) {
-    const s = await opts.relayer.getStatus(taskId, false)
+    const s = await opts.relayer.getStatus(taskId, true)
     status = s.status
     if (s.hash) hash = s.hash
+    // Keep the relayer's message + structured reason (the revert detail lives in `data`).
+    const detail = s.data ? (typeof s.data === 'string' ? s.data : JSON.stringify(s.data)) : ''
+    const combined = [s.message, detail].filter(Boolean).join(' ')
+    if (combined) reason = combined
     if (status >= 200) break
     await new Promise(r => setTimeout(r, 3000))
   }
-  return { taskId, status, ...(hash ? { hash } : {}) }
+  return { taskId, status, ...(hash ? { hash } : {}), ...(reason ? { reason } : {}) }
 }
 
 /**
